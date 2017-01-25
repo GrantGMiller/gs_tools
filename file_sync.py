@@ -288,4 +288,3 @@ def HandleConnection(interface):
     # Start the connection
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
         Wait(0.1, interface.Connect)
-

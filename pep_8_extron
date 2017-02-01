@@ -1,0 +1,96 @@
+In general, follow PEP8.
+
+File Name: Project Name Room - Initials - Date version
+
+ex: RCC RM 205 - DC - 05-17-2016 v1.gs
+
+The project name and room section's nomenclature is flexible and can change depending on the project
+
+Module Names: lowercase_with_underscores
+
+ex: main.py
+polling_engine_v1_0.py
+
+Based on PEP 8
+
+Class names: CapWords
+
+ex: class MyClass:
+
+Based on PEP8
+
+Methods, functions: lowercase_with_underscores
+
+ex: def initialize_matrix():
+
+Based on PEP8 (functions)
+
+Parameters / arguments: lowercase_with_underscores
+
+ex: def my_function(my_text):
+           print(my_text)
+
+Constants: UPPER_CASE_WITH_UNDERSCORES
+
+ex: MATRIX_OUTPUT = '1'
+
+Based on PEP 8
+
+Variables (including Class / Instance Variables): lowercase_with_underscores
+
+Ex: stored_status
+self.query_list
+
+Based on PEP8
+
+Private attributes
+
+Weak internal use attributes should have a single leading underscore
+
+ex: self._query_list
+
+Attributes that are meant to be protected from being overridden from subclasses should have double leading underscores to invoke Python's name mangling
+
+ex: self.__my_attribute
+
+Based on PEP 8
+
+UI - Buttons, Levels, Labels, Knob
+
+Identifiers should start with the type.
+
+Ex: btn_power_on
+
+lvl_program
+
+lbl_dialer
+
+knob_TLP
+
+Importing modules
+
+When importing modules, the module can be given an identifier in the local namespace using the "as" keyword
+
+TBD: Currently there is no standard on when to use "as" and its naming convention.
+
+String Quotes
+
+Use single quote for string, bytes, etc objects. Use double quotes only if the string has single quotes
+
+ex: test = 'Hello World'
+
+ex: test2 = "This is an 'example' of single quotes."
+
+Docstrings
+
+Refer to PEP 257
+
+Use three double quotes
+
+Docstrings can be placed right after class or function definitions or at the beginning of the .py module.
+
+Adding as much docstrings as possible is encouraged
+
+ex: """Reverts system back to original state"""
+
+TBD: Currently there is no standard on what to include in module/file docstrings and when to use them

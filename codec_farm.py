@@ -4,7 +4,7 @@ Gmiller@extron.com
 800-633-9876 x6032
 April 13, 2016
 
-Version 2.0.0 -
+Version 2.0.0 - better?
 
 Version 1.1.0 - 09-06-2016
 Updated Servers to EthernetServerInterfaceEx to improve Connected/Disconnect handling.

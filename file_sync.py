@@ -1,4 +1,9 @@
-''' This is a working example of a main.py
+'''
+ This module was made to accommodate the following scenario:
+ There are two independent GS system that need to share information.
+ Each system needs the ability to be asynchrously updated of changes to specific values, as well as send an update to the other system.
+
+ This is a working example of a main.py
 
 ## Begin ControlScript Import --------------------------------------------------
 from extronlib import event, Version
@@ -19,10 +24,10 @@ TLP = UIDevice('TLP')
 
 #File Sync *********************************************************************
 Syncer = SystemSync()
-Syncer.AddSystem('10.8.27.117')
+Syncer.AddSystem('10.8.27.117') #The IP of the other system's processor
 
 @event(Syncer, 'NewData')
-def NewDataEvent(interface, data):
+def NewDataEvent(interface, data): #This event will be fired any time the other system updates a value.
     print('NewDataEvent()\ndata=', data)
     for key in data:
         if key == 'Volume':
@@ -68,7 +73,7 @@ def BtnVolumeEvent(button, state):
             Syncer.Set('Volume', LvlVolume.Level)
 
         elif button == BtnVolumeMute:
-            Syncer.Set('Mute', BtnVolumeMute.State)
+            Syncer.Set('Mute', BtnVolumeMute.State) #This will update the other system with the new value
 
 print('Project Loaded')
 

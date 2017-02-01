@@ -1,3 +1,6 @@
+'''This module allows a simple way to create persistant variable.
+That is, variables that are saved to non-volatile memory. Thus, they will survive a hard power cycle
+'''
 from extronlib.system import File
 
 import json

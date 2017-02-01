@@ -146,4 +146,3 @@ class ScrollingList():
         '''
         self.LastSelectedItem = Item
         self.UpdateDisplay()
-

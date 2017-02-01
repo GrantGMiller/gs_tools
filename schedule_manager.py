@@ -2,10 +2,10 @@ from extronlib.system import Clock
 
 CallbackDict = {
     # ClockObject: {
-    # 'Function': functionObject,
-    # 'args': args,
-    # 'kwargs': kwargs
-    # }
+        # 'Function': functionObject,
+        # 'args': args,
+        # 'kwargs': kwargs
+        # }
 }
 
 
@@ -82,6 +82,8 @@ class ScheduleManager():
                                   }
 
         return NewClock
+
+    #TODO - add a way to modify an existing schedule
 
 
 def ClockCallback(clock, datetime):

@@ -10,6 +10,7 @@ This class adds the ability to send an email with attachement.
 Note: this class does not support SMTP username/password although it could be easily added.
 
 Based on example from: http://www.codeproject.com/Articles/28806/SMTP-Client and other online resources
+
 '''
 
 from extronlib import event
@@ -21,9 +22,10 @@ import base64
 
 
 class SMTP_Client(EthernetClientInterface):
-    def __init__(self, IP, Port):
-        self.IP = IP
-        self.Port = Port
+    def __init__(self, smtpServer=None, port=None, username=None, password=None, sslEnabled=None):
+        #TODO - account for username, password, sslEnabled
+        self.IP = smtpServer
+        self.Port = port
         self.Receivers = []
         self.Received220 = False
         self.Received250 = False
@@ -46,6 +48,7 @@ class SMTP_Client(EthernetClientInterface):
                 # AddTrace(self.Interface)
 
     def Receiver(self, receiver=[], cc=False):
+        #TODO - account for cc=True
         if not isinstance(receiver, list):
             receiver = [receiver]
 

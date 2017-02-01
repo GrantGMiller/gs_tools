@@ -1,3 +1,7 @@
+'''
+There is not an official Quantum Ultra module available, so this one gets the job done for now.
+'''
+
 from extronlib.interface import EthernetClientInterface, SerialInterface
 from extronlib.system import Wait
 

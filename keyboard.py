@@ -219,7 +219,9 @@ class Keyboard():
 
     def SetFeedbackObject(self, NewFeedbackObject):
         '''
-        Changes the ID of the object to receive feedback
+        Changes the ID of the object to receive feedback.
+        This class will remember the text that should be applied to each feedback object.
+        Allowing the user/programmer to switch which field the keyboard is modifiying, on the fly.
         '''
         # Save the current text
         self.TextFields[self.FeedbackObject] = self.GetString()

@@ -4,7 +4,7 @@ Aug 23, 2016
 gmiller@extron.com
 800-633-9876 x6032
 
-This module was created to accomodate the following scenario:
+This module was created to accommodate the following scenario:
 A divisible room system has two sides 'A' and 'B'.
 
 The two systems A/B can operate independently.

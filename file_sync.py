@@ -89,11 +89,10 @@ from extronlib.device import (
 )
 import extronlib
 
-import time
 import json
 
 
-class SystemSync():
+class SystemSync:
     def __init__(self, filename='system_data.json'):
         self.clients = []
         self.filename = filename

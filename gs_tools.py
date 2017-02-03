@@ -832,7 +832,6 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
     return text
 
-
 def PrintProgramLog():
     """usage:
    print = PrintProgramLog()
@@ -840,12 +839,20 @@ def PrintProgramLog():
     def print(*args, **kwargs):  # override the print function to write to program log instead
     
         severity = kwargs.get('severity', 'info')
-        sep = kwargs.get('sep', ' ')
-        end = kwargs.get('end', '\n')
+        
+        # Following is done to emulate behavior Python's print keyword arguments
+        # (ie. you can set the arguments to None and it will do the default behavior)
+        sep = kwargs.get('sep')
+        if sep is None:
+            sep = ' '
+            
+        end = kwargs.get('end')
+        if end is None:
+            end = '\n'
         
         string = []
         for arg in args:
-            string.append(arg)
+            string.append(str(arg))
         ProgramLog(sep.join(string) + end, severity)
 
     return print

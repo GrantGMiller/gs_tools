@@ -18,6 +18,7 @@ from extronlib.system import Wait, ProgramLog, File
 from extronlib.ui import Button, Level
 
 import json
+import itertools
 
 
 # extronlib.ui *****************************************************************
@@ -45,7 +46,8 @@ class Button(extronlib.ui.Button):
             self.AutoStateChange('Released', 0)
 
         self.Text = ''
-
+        self.ToggleStateList = None
+        
         self.AllButtons.append(self)
 
     def CheckEventHandlers(self):
@@ -124,11 +126,31 @@ class Button(extronlib.ui.Button):
 
     def AppendText(self, text):
         self.SetText(self.Text + text)
-
+        
+    def ToggleVisibility(self):
+        if self.Visible:
+            self.SetVisible(False)
+        else:
+            self.SetVisible(True)
+            
+    def ToggleState(self):
+        if self.ToggleStateList is None:
+            if self.State == 0:
+                self.SetState(1)
+            else:
+                self.SetState(0)
+        else:
+            self.SetState(next(self.ToggleStateList))
+        
+    def SetToggleList(self, toggleList):
+        """Sets the list of button states that ToggleState goes through"""
+        if toggleList is not None:
+            self.ToggleStateList = itertools.cycle(toggleList)
+        else:
+            self.ToggleStateList = None
 
 class Knob(extronlib.ui.Knob):
     pass
-
 
 class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):

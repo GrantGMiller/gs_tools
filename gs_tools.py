@@ -157,8 +157,10 @@ class MESet(extronlib.system.MESet):
 
 
 class Wait(extronlib.system.Wait):
-    pass
-
+    """Functions that are decorated with Wait now are callable elsewhere."""
+    def __call__(self, function):
+        super().__call__(function)
+        return function
 
 class File(extronlib.system.File):
     pass
@@ -832,14 +834,21 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
 
 def PrintProgramLog():
-    def print(*args):  # override the print function to write to program log instead
-        string = ''
+    """usage:
+   print = PrintProgramLog()
+   """
+    def print(*args, **kwargs):  # override the print function to write to program log instead
+    
+        severity = kwargs.get('severity', 'info')
+        sep = kwargs.get('sep', ' ')
+        end = kwargs.get('end', '\n')
+        
+        string = []
         for arg in args:
-            string += ' ' + str(arg)
-        ProgramLog(string, 'info')
+            string.append(arg)
+        ProgramLog(sep.join(string) + end, severity)
 
     return print
-
 
 class PersistantVariables():
     def __init__(self, filename):

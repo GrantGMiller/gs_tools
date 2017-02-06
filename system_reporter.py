@@ -157,11 +157,11 @@ def MakeSystemReport(filename='system_report.txt'):
     newFile.close()
     print('End MakeSystemReport()')
     
-def EmailSystemReport(email='gmiller@extron.com', filename='system_report.txt'):
+def EmailSystemReport(email, filename='system_report.txt', systemName='SystemReport'):
     Email = SMTP_client.SMTP_Client('10.1.5.49', 25)
     Email.Receiver([email])
-    Email.Subject('Extron Toronto Classroom - System Report')
-    Email.Sender('ExtronTorontoCR@extron.com')
+    Email.Subject('System Report: {}'.format(systemName))
+    Email.Sender('{}@extron.com'.format(systemName))
     Email.AddAttachement(filename)
     Email.SendMessage(msg='Please see the attached report.')
     

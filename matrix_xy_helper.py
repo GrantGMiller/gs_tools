@@ -25,6 +25,7 @@ class Matrix_XY_Helper():
         self.WaitResetMES = Wait(1, ResetMES)
         self.WaitResetMES.Cancel()
 
+
     def AddMatrixInfo(self, MatrixInfo):
         self.MatrixInfo = MatrixInfo
 

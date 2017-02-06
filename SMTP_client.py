@@ -17,7 +17,6 @@ from extronlib import event
 from extronlib.interface import EthernetClientInterface
 import time
 from extronlib.system import File
-from trace_v1 import AddTrace
 import base64
 
 
@@ -46,6 +45,8 @@ class SMTP_Client(EthernetClientInterface):
                 self.Received250 = True
 
                 # AddTrace(self.Interface)
+
+        self.sender = 'IPCP@extron.com'
 
     def Receiver(self, receiver=[], cc=False):
         #TODO - account for cc=True

@@ -18,6 +18,7 @@ from extronlib.system import Wait, ProgramLog, File
 from extronlib.ui import Button, Level
 
 import json
+import itertools
 
 
 # extronlib.ui *****************************************************************
@@ -45,7 +46,8 @@ class Button(extronlib.ui.Button):
             self.AutoStateChange('Released', 0)
 
         self.Text = ''
-
+        self.ToggleStateList = None
+        
         self.AllButtons.append(self)
 
     def CheckEventHandlers(self):
@@ -124,11 +126,31 @@ class Button(extronlib.ui.Button):
 
     def AppendText(self, text):
         self.SetText(self.Text + text)
-
+        
+    def ToggleVisibility(self):
+        if self.Visible:
+            self.SetVisible(False)
+        else:
+            self.SetVisible(True)
+            
+    def ToggleState(self):
+        if self.ToggleStateList is None:
+            if self.State == 0:
+                self.SetState(1)
+            else:
+                self.SetState(0)
+        else:
+            self.SetState(next(self.ToggleStateList))
+        
+    def SetToggleList(self, toggleList):
+        """Sets the list of button states that ToggleState goes through"""
+        if toggleList is not None:
+            self.ToggleStateList = itertools.cycle(toggleList)
+        else:
+            self.ToggleStateList = None
 
 class Knob(extronlib.ui.Knob):
     pass
-
 
 class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):
@@ -157,8 +179,10 @@ class MESet(extronlib.system.MESet):
 
 
 class Wait(extronlib.system.Wait):
-    pass
-
+    """Functions that are decorated with Wait now are callable elsewhere."""
+    def __call__(self, function):
+        super().__call__(function)
+        return function
 
 class File(extronlib.system.File):
     pass
@@ -830,16 +854,30 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
     return text
 
-
 def PrintProgramLog():
-    def print(*args):  # override the print function to write to program log instead
-        string = ''
+    """usage:
+   print = PrintProgramLog()
+   """
+    def print(*args, **kwargs):  # override the print function to write to program log instead
+    
+        severity = kwargs.get('severity', 'info')
+        
+        # Following is done to emulate behavior Python's print keyword arguments
+        # (ie. you can set the arguments to None and it will do the default behavior)
+        sep = kwargs.get('sep')
+        if sep is None:
+            sep = ' '
+            
+        end = kwargs.get('end')
+        if end is None:
+            end = '\n'
+        
+        string = []
         for arg in args:
-            string += ' ' + str(arg)
-        ProgramLog(string, 'info')
+            string.append(str(arg))
+        ProgramLog(sep.join(string) + end, severity)
 
     return print
-
 
 class PersistantVariables():
     def __init__(self, filename):

@@ -858,17 +858,12 @@ def PrintProgramLog():
     """usage:
    print = PrintProgramLog()
    """
-    def print(*args, **kwargs):  # override the print function to write to program log instead
-    
-        severity = kwargs.get('severity', 'info')
-        
+    def print(*args, sep=' ', end='\n', severity='info', **kwargs):  # override the print function to write to program log instead
         # Following is done to emulate behavior Python's print keyword arguments
         # (ie. you can set the arguments to None and it will do the default behavior)
-        sep = kwargs.get('sep')
         if sep is None:
             sep = ' '
             
-        end = kwargs.get('end')
         if end is None:
             end = '\n'
         

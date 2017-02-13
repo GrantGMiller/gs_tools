@@ -584,7 +584,7 @@ class PollingEngine():
 
         return TheGenerator()
 
-    def AddQuery(self, interface, command, qualifier):
+    def AddQuery(self, interface, command, qualifier=None):
         '''
         This adds a query to the list of queries that will be sent. 
         One query per second.

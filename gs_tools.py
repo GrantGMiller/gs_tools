@@ -584,7 +584,7 @@ class PollingEngine():
 
         return TheGenerator()
 
-    def AddQuery(self, QueryDict):
+    def AddQuery(self, interface, command, qualifier):
         '''
         This adds a query to the list of queries that will be sent. 
         One query per second.
@@ -596,6 +596,11 @@ class PollingEngine():
          }
 
         '''
+        QueryDict = {'Interface': interface,
+                     'Command': command,
+                     'Qualifier': qualifier,
+                     }
+
         print('PollingEngine.AddQuery({})'.format(QueryDict))
         if ('Interface' in QueryDict and
                     'Command' in QueryDict and

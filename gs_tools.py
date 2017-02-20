@@ -1119,4 +1119,28 @@ def toPercent(Value, Min=0, Max=100):
     return Percent
 
 
+def IncrementIP(IP):
+    IPsplit = IP.split('.')
+
+    Oct1 = int(IPsplit[0])
+    Oct2 = int(IPsplit[1])
+    Oct3 = int(IPsplit[2])
+    Oct4 = int(IPsplit[3])
+
+    Oct4 += 1
+    if Oct4 > 255:
+        Oct4 = 0
+        Oct3 += 1
+        if Oct3 > 255:
+            Oct3 = 0
+            Oct2 += 1
+            if Oct2 > 255:
+                Oct2 = 0
+                Oct1 += 1
+                if Oct1 > 255:
+                    Oct1 = 0
+
+    return str(Oct1) + '.' + str(Oct2) + '.' + str(Oct3) + '.' + str(Oct4)
+
+
 print('End  GST')

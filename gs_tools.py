@@ -19,6 +19,7 @@ from extronlib.ui import Button, Level
 
 import json
 import itertools
+import time
 
 
 # extronlib.ui *****************************************************************

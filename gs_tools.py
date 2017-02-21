@@ -48,7 +48,7 @@ class Button(extronlib.ui.Button):
 
         self.Text = ''
         self.ToggleStateList = None
-        
+
         self.AllButtons.append(self)
 
     def CheckEventHandlers(self):
@@ -127,13 +127,13 @@ class Button(extronlib.ui.Button):
 
     def AppendText(self, text):
         self.SetText(self.Text + text)
-        
+
     def ToggleVisibility(self):
         if self.Visible:
             self.SetVisible(False)
         else:
             self.SetVisible(True)
-            
+
     def ToggleState(self):
         if self.ToggleStateList is None:
             if self.State == 0:
@@ -142,7 +142,7 @@ class Button(extronlib.ui.Button):
                 self.SetState(0)
         else:
             self.SetState(next(self.ToggleStateList))
-        
+
     def SetToggleList(self, toggleList):
         """Sets the list of button states that ToggleState goes through"""
         if toggleList is not None:
@@ -150,8 +150,10 @@ class Button(extronlib.ui.Button):
         else:
             self.ToggleStateList = None
 
+
 class Knob(extronlib.ui.Knob):
     pass
+
 
 class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):
@@ -181,9 +183,11 @@ class MESet(extronlib.system.MESet):
 
 class Wait(extronlib.system.Wait):
     """Functions that are decorated with Wait now are callable elsewhere."""
+
     def __call__(self, function):
         super().__call__(function)
         return function
+
 
 class File(extronlib.system.File):
     pass
@@ -482,8 +486,8 @@ def isConnected(interface):
         return False
 
 
-#Connection Handler ***************************************************************
-#Globals
+# Connection Handler ***************************************************************
+# Globals
 if not File.Exists('connection.log'):
     file = File('connection.log', mode='wt')
     file.close()
@@ -496,6 +500,7 @@ ConnectionStatus = {}
 GREEN = 2
 RED = 1
 WHITE = 0
+
 
 def NewStatus(interface, state, Type='Unknown'):
     if not interface in ConnectionStatus:
@@ -542,13 +547,16 @@ def NewStatus(interface, state, Type='Unknown'):
                 btn.SetState(WHITE)
                 btn.SetText('Error')
 
+
 StatusButtons = {}
+
 
 def AddStatusButton(interface, btn):
     if interface not in StatusButtons:
         StatusButtons[interface] = []
 
     StatusButtons[interface].append(btn)
+
 
 def HandleConnection(interface):
     '''
@@ -567,7 +575,7 @@ def HandleConnection(interface):
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
             if len(interface.Clients) > 0:
                 state = 'Connected'
-            elif len(interface.Clients) = 0:
+            elif len(interface.Clients) == 0:
                 state = 'Disconnected'
 
         print('connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
@@ -610,9 +618,10 @@ def HandleConnection(interface):
               isinstance(interface, extronlib.interface.SerialInterface) or
               isinstance(interface, exronlib.interface.EthernetServerInterfaceEx):
         interface.Connected = PhysicalConnectionHandler
-        interface.Disconnected = PhysicalConnectionHandler
+    interface.Disconnected = PhysicalConnectionHandler
 
     # Module Connection status
+
     def GetModuleCallback(interface):
         def ModuleConnectionCallback(command, value, qualifier):
             print('connection_handler_v1_0_6 ModuleConnectionCallback\ninterface={}\nvalue={}'.format(interface,
@@ -640,6 +649,7 @@ def HandleConnection(interface):
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
         Wait(0.1, interface.Connect)
 
+
 def isConnected(interface):
     if interface in ConnectionStatus:
         if ConnectionStatus[interface] in ['Online', 'Connected']:
@@ -649,11 +659,13 @@ def isConnected(interface):
     else:
         return False
 
+
 # Logical Handler ***************************************************************
 SendCounter = {  # interface: count
     # count = int(), number of queries that have been send since the last Rx
 }
 Callbacks = {}
+
 
 def AddLogicalConnectionHandling(interface, limit=3, callback=None):
     '''
@@ -711,10 +723,12 @@ def AddLogicalConnectionHandling(interface, limit=3, callback=None):
         #
         # interface.ReceiveData = NewRx
 
+
 def ConnectionHandlerLogicalReset(interface):
     # This needs to be called by the ReceiveData event elsewhere in code
     SendCounter[interface] = 0
     Callbacks[interface]('ConnectionStatus', 'Connected', None)
+
 
 # Polling Engine ****************************************************************
 class PollingEngine():
@@ -1022,25 +1036,29 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
     return text
 
+
 def PrintProgramLog():
     """usage:
    print = PrintProgramLog()
    """
-    def print(*args, sep=' ', end='\n', severity='info', **kwargs):  # override the print function to write to program log instead
+
+    def print(*args, sep=' ', end='\n', severity='info',
+              **kwargs):  # override the print function to write to program log instead
         # Following is done to emulate behavior Python's print keyword arguments
         # (ie. you can set the arguments to None and it will do the default behavior)
         if sep is None:
             sep = ' '
-            
+
         if end is None:
             end = '\n'
-        
+
         string = []
         for arg in args:
             string.append(str(arg))
         ProgramLog(sep.join(string) + end, severity)
 
     return print
+
 
 class PersistantVariables():
     def __init__(self, filename):

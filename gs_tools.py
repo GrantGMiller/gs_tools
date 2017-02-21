@@ -563,14 +563,22 @@ def HandleConnection(interface):
 
     # Physical connection status
     def PhysicalConnectionHandler(interface, state):
-        print(
-            'connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
+        # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
+        if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+            if len(interface.Clients) > 0:
+                state = 'Connected'
+            elif len(interface.Clients) = 0:
+                state = 'Disconnected'
 
+        print('connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
+
+        # Handle the Disconnectec/Offline event
         if state in ['Disconnected', 'Offline']:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
                     WaitReconnect.Restart()
 
+        # Handle the Connected/Online event
         elif state in ['Connected', 'Online']:
             if hasattr(interface, 'OnConnected'):
                 interface.OnConnected()
@@ -579,6 +587,7 @@ def HandleConnection(interface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
                     WaitReconnect.Cancel()
 
+        # If the status has changed from Connected to Disconnected or vice versa, log the change
         if ConnectionStatus[interface] != state:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
@@ -592,12 +601,14 @@ def HandleConnection(interface):
 
         NewStatus(interface, state, 'Physically')
 
+    # Assign the pysical handler appropriately
     if isinstance(interface, UIDevice):
         interface.Online = PhysicalConnectionHandler
         interface.Offline = PhysicalConnectionHandler
 
     elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
-              isinstance(interface, extronlib.interface.SerialInterface)):
+              isinstance(interface, extronlib.interface.SerialInterface) or
+              isinstance(interface, exronlib.interface.EthernetServerInterfaceEx):
         interface.Connected = PhysicalConnectionHandler
         interface.Disconnected = PhysicalConnectionHandler
 

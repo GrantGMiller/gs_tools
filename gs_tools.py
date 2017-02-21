@@ -616,7 +616,8 @@ def HandleConnection(interface):
 
     elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
               isinstance(interface, extronlib.interface.SerialInterface) or
-              isinstance(interface, exronlib.interface.EthernetServerInterfaceEx):
+              isinstance(interface, extronlib.interface.EthernetServerInterfaceEx)
+          ):
         interface.Connected = PhysicalConnectionHandler
     interface.Disconnected = PhysicalConnectionHandler
 

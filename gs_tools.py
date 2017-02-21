@@ -492,6 +492,8 @@ with File('connection.log', mode='at') as file:
     file.write('\n{} - Processor Restarted\n\n'.format(time.asctime()))
 
 ConnectionStatus = {}
+ClientObjects = {#ClientObject: ServerObject,
+    }
 
 GREEN = 2
 RED = 1
@@ -566,19 +568,30 @@ def HandleConnection(interface):
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
             # The client object gets passed into the connection handler instead of the server interface.
             # Look thru all the interfaces and see if this client object exist inside one of the server interfaces
-            for intf in ConnectionStatus:
-                if isinstance(intf, extronlib.interface.EthernetServerInterfaceEx):
-                    for client in intf.Clients:
-                        if client == interface:
-                            print('Client {}\nbelongs to Server {}'.format(client, intf))
-                            interface = intf #Reference the server interface instead of the client object
+            if interface in ClientObjects:
+                interface = ClientObjects[interface]
+                if state == 'Disconnected':
+                    ClientObjects.pop(interface) #avoid a memory leak where 'Disconected' ClientObjects will build up in memory.
+            else:
+                for intf in ConnectionStatus:
+                    if isinstance(intf, extronlib.interface.EthernetServerInterfaceEx):
+                        for client in intf.Clients:
+                            if client == interface:
+                                print('Client {}\nbelongs to Server {}'.format(client, intf))
 
-                            # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
-                            if len(intf.Clients) > 0:
-                                state = 'Connected'
-                            elif len(intf.Clients) == 0:
-                                state = 'Disconnected'
-                            break
+                                ClientObjects[client] = intf #Save this pair for later
+
+                                interface = intf #Reference the server interface instead of the client object
+                                break
+
+            # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
+            if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+                if len(interface.Clients) > 0:
+                    state = 'Connected'
+                elif len(interface.Clients) == 0:
+                    state = 'Disconnected'
+
+
 
         print('connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
 

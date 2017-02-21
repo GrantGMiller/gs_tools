@@ -150,10 +150,8 @@ class Button(extronlib.ui.Button):
         else:
             self.ToggleStateList = None
 
-
 class Knob(extronlib.ui.Knob):
     pass
-
 
 class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):
@@ -183,11 +181,9 @@ class MESet(extronlib.system.MESet):
 
 class Wait(extronlib.system.Wait):
     """Functions that are decorated with Wait now are callable elsewhere."""
-
     def __call__(self, function):
         super().__call__(function)
         return function
-
 
 class File(extronlib.system.File):
     pass
@@ -373,7 +369,7 @@ class event():
 # Volume Handler ****************************************************************
 class VolumeHandler():
     '''
-    This class will take 3 buttons (up/down/mute) and info about the interface 
+    This class will take 3 buttons (up/down/mute) and info about the interface
         and will setup the button events to send the command to the interface.
     This class does NOT handle feedback
     '''
@@ -486,8 +482,8 @@ def isConnected(interface):
         return False
 
 
-# Connection Handler ***************************************************************
-# Globals
+#Connection Handler ***************************************************************
+#Globals
 if not File.Exists('connection.log'):
     file = File('connection.log', mode='wt')
     file.close()
@@ -500,7 +496,6 @@ ConnectionStatus = {}
 GREEN = 2
 RED = 1
 WHITE = 0
-
 
 def NewStatus(interface, state, Type='Unknown'):
     if not interface in ConnectionStatus:
@@ -547,16 +542,13 @@ def NewStatus(interface, state, Type='Unknown'):
                 btn.SetState(WHITE)
                 btn.SetText('Error')
 
-
 StatusButtons = {}
-
 
 def AddStatusButton(interface, btn):
     if interface not in StatusButtons:
         StatusButtons[interface] = []
 
     StatusButtons[interface].append(btn)
-
 
 def HandleConnection(interface):
     '''
@@ -571,12 +563,22 @@ def HandleConnection(interface):
 
     # Physical connection status
     def PhysicalConnectionHandler(interface, state):
-        # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
-        if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
-            if len(interface.Clients) > 0:
-                state = 'Connected'
-            elif len(interface.Clients) == 0:
-                state = 'Disconnected'
+        if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
+            # The client object gets passed into the connection handler instead of the server interface.
+            # Look thru all the interfaces and see if this client object exist inside one of the server interfaces
+            for intf in ConnectionStatus:
+                if isinstance(intf, extronlib.interface.EthernetServerInterfaceEx):
+                    for client in intf.Clients:
+                        if client == interface:
+                            print('Client {}\nbelongs to Server {}'.format(client, intf))
+                            interface = intf #Reference the server interface instead of the client object
+
+                            # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
+                            if len(intf.Clients) > 0:
+                                state = 'Connected'
+                            elif len(intf.Clients) == 0:
+                                state = 'Disconnected'
+                            break
 
         print('connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
 
@@ -617,12 +619,11 @@ def HandleConnection(interface):
     elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
               isinstance(interface, extronlib.interface.SerialInterface) or
               isinstance(interface, extronlib.interface.EthernetServerInterfaceEx)
-          ):
+              ):
         interface.Connected = PhysicalConnectionHandler
-    interface.Disconnected = PhysicalConnectionHandler
+        interface.Disconnected = PhysicalConnectionHandler
 
     # Module Connection status
-
     def GetModuleCallback(interface):
         def ModuleConnectionCallback(command, value, qualifier):
             print('connection_handler_v1_0_6 ModuleConnectionCallback\ninterface={}\nvalue={}'.format(interface,
@@ -649,7 +650,8 @@ def HandleConnection(interface):
     # Start the connection
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
         Wait(0.1, interface.Connect)
-
+    elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+        interface.StartListen()
 
 def isConnected(interface):
     if interface in ConnectionStatus:
@@ -660,13 +662,11 @@ def isConnected(interface):
     else:
         return False
 
-
 # Logical Handler ***************************************************************
 SendCounter = {  # interface: count
     # count = int(), number of queries that have been send since the last Rx
 }
 Callbacks = {}
-
 
 def AddLogicalConnectionHandling(interface, limit=3, callback=None):
     '''
@@ -724,12 +724,10 @@ def AddLogicalConnectionHandling(interface, limit=3, callback=None):
         #
         # interface.ReceiveData = NewRx
 
-
 def ConnectionHandlerLogicalReset(interface):
     # This needs to be called by the ReceiveData event elsewhere in code
     SendCounter[interface] = 0
     Callbacks[interface]('ConnectionStatus', 'Connected', None)
-
 
 # Polling Engine ****************************************************************
 class PollingEngine():
@@ -764,7 +762,7 @@ class PollingEngine():
 
     def AddQuery(self, interface, command, qualifier=None):
         '''
-        This adds a query to the list of queries that will be sent. 
+        This adds a query to the list of queries that will be sent.
         One query per second.
 
         QueryDict should be a dictionary in the following format
@@ -791,7 +789,7 @@ class PollingEngine():
 
     def RemoveQuery(self, QueryDict):
         '''
-        Removes the query from self.Queries. 
+        Removes the query from self.Queries.
         For example, if the system is off, we do not need to poll for input signal status on a video switcher.
         '''
         for Dict in self.Queries:
@@ -1037,14 +1035,11 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
     return text
 
-
 def PrintProgramLog():
     """usage:
    print = PrintProgramLog()
    """
-
-    def print(*args, sep=' ', end='\n', severity='info',
-              **kwargs):  # override the print function to write to program log instead
+    def print(*args, sep=' ', end='\n', severity='info', **kwargs):  # override the print function to write to program log instead
         # Following is done to emulate behavior Python's print keyword arguments
         # (ie. you can set the arguments to None and it will do the default behavior)
         if sep is None:
@@ -1059,7 +1054,6 @@ def PrintProgramLog():
         ProgramLog(sep.join(string) + end, severity)
 
     return print
-
 
 class PersistantVariables():
     def __init__(self, filename):

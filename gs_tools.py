@@ -1,12 +1,5 @@
 '''
 This module is meant to handle common functionality.
-
-v1.0.1 - Sept 16, 2016
-Button.AutoStateChange('Pressed', 1)
-Button.AutoStateChange('Released', 0)
-
-This will automatically change the button state without affecting the programmers Pressed/Released handlers.
-
 '''
 print('Begin GST')
 
@@ -33,7 +26,15 @@ class Button(extronlib.ui.Button):
                   'Released',
                   ]
 
-    def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback='State'):
+    def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
+        '''
+
+        :param Host:
+        :param ID:
+        :param holdTime:
+        :param repeatTime:
+        :param PressFeedback: If you want the button to change states when you press/release, set this to 'State'
+        '''
         extronlib.ui.Button.__init__(self, Host, ID, holdTime=holdTime, repeatTime=repeatTime)
 
         self.StateChangeMap = {}  # ex. {'Pressed': 1, 'Released': 0}
@@ -51,7 +52,7 @@ class Button(extronlib.ui.Button):
 
         self.AllButtons.append(self)
 
-    def CheckEventHandlers(self):
+    def _CheckEventHandlers(self):
         for EventName in self.EventNames:
             if EventName in self.StateChangeMap:
                 CurrentAtt = getattr(self, EventName)
@@ -80,15 +81,25 @@ class Button(extronlib.ui.Button):
                     # print(getattr(self, 'Last' + EventName))
 
     def RemoveStateChange(self):
+        '''
+        This will disable all states changes based on press/release
+        :return:
+        '''
         self.StateChangeMap = {}
 
     def AutoStateChange(self, eventName, buttonState):
-        '''Automatically change the button to state buttonState when the eventName handler is called'''
+        '''
+        This is used to change the button state based on a certain event.
+        This is non-destructive. Your previously defined events will be maintained.
+        :param eventName: ie. 'Pressed', 'Released', etc
+        :param buttonState: The button will change to this state when the even happens.
+        :return:
+        '''
         self.StateChangeMap[eventName] = buttonState
         Handler = getattr(self, eventName)
         if Handler == None:
             setattr(self, eventName, lambda *args: None)
-            self.CheckEventHandlers()
+            self._CheckEventHandlers()
 
     def _DoStateChange(self, state):
         # print(self.ID, '_DoStateChange')
@@ -107,10 +118,10 @@ class Button(extronlib.ui.Button):
             button.Host.ShowPopup(popup, duration)
 
         self.Released = NewFunc
-        self.CheckEventHandlers()
+        self._CheckEventHandlers()
 
     def HidePopup(self, popup):
-        '''This method is used to simplify a button that just needs to show a popup
+        '''This method is used to simplify a button that just needs to hide a popup
         Example:
         Button(TLP, 8023).HidePopup('Confirm - Shutdown')
         '''
@@ -119,22 +130,45 @@ class Button(extronlib.ui.Button):
             button.Host.HidePopup(popup)
 
         self.Released = NewFunc
-        self.CheckEventHandlers()
+        self._CheckEventHandlers()
 
     def SetText(self, text):
         super().SetText(text)
         self.Text = text
 
+    def GetText(self):
+        '''
+        This object will store the last value assigned with .SetText()
+        You can retrieve the current text using this method.
+        Note: If you call .GetText() without first calling .SetText() this method will return ''
+        :return:
+        '''
+        return self.Text
+
     def AppendText(self, text):
+        '''
+        This method will append to the current text.
+        Note: you must call .SetText() before you call .AppendText()
+        :param text:
+        :return:
+        '''
         self.SetText(self.Text + text)
 
     def ToggleVisibility(self):
+        '''
+        An easy way to toggle visibility
+        :return:
+        '''
         if self.Visible:
             self.SetVisible(False)
         else:
             self.SetVisible(True)
 
     def ToggleState(self):
+        '''
+        An easy way to toggle state
+        :return:
+        '''
         if self.ToggleStateList is None:
             if self.State == 0:
                 self.SetState(1)
@@ -144,7 +178,11 @@ class Button(extronlib.ui.Button):
             self.SetState(next(self.ToggleStateList))
 
     def SetToggleList(self, toggleList):
-        """Sets the list of button states that ToggleState goes through"""
+        '''
+        This toggles a button through the list of states every time .ToggleState() is called.
+        :param toggleList: The list of button states to toggle through.
+        :return:
+        '''
         if toggleList is not None:
             self.ToggleStateList = itertools.cycle(toggleList)
         else:
@@ -299,6 +337,12 @@ class UIDevice(extronlib.device.UIDevice):
         self.PageData[page] = 'Showing'
 
     def IsShowing(self, pageOrPopupName):
+        '''
+        Returns True if popup with name pageOrPopupName is definitely showing.
+        Returns False if it might be showing, or is hidden. This depends on weather the popup is exclusive to other popups.
+        :param pageOrPopupName: string
+        :return: bool
+        '''
         for PageName in self.PageData:
             if PageName == pageOrPopupName:
                 Result = self.PageData[PageName]
@@ -326,8 +370,10 @@ class UIDevice(extronlib.device.UIDevice):
 
     def GetAllButtons(self, ID=None):
         '''
-        Return list with all button objects with ID = ID
-        If ID == None, return list of all buttons
+        Returns button objects with this ID.
+        This will return any button object that has been instantiated from any UIDevice host.
+        :param ID: int
+        :return: Button object
         '''
 
         ReturnBtns = []
@@ -362,7 +408,7 @@ class event():
             for eventName in self.eventNames:
                 setattr(obj, eventName, func)
             if hasattr(obj, 'CheckEventHandlers'):
-                obj.CheckEventHandlers()
+                obj._CheckEventHandlers()
         return func
 
 
@@ -387,6 +433,19 @@ class VolumeHandler():
                  MuteCommand=None,
                  MuteQualifier=None,
                  ):
+        '''
+
+        :param BtnUp: extronlib.ui.Button instance
+        :param BtnDown: extronlib.ui.Button instance
+        :param BtnMute: extronlib.ui.Button instance
+        :param repeatTime: float
+        :param stepSize: float
+        :param Interface: extronlib.interface.* instance
+        :param GainCommand: str
+        :param GainQualifier: dict
+        :param MuteCommand: str
+        :param MuteQualifier: dict
+        '''
 
         BtnUp._repeatTime = repeatTime
         BtnDown._repeatTime = repeatTime
@@ -415,6 +474,12 @@ class VolumeHandler():
 # These functions/classes help to assign feedback to Buttons/Labels/Levels, etc
 
 def AddTrace(InterfaceObject):
+    '''
+    Calling AddTrace(extronlib.interface.* ) will add a print statement to all Send/SendAndWait/ReceiveData calls
+    This is non-destructive to the event handlers that have already been defined.
+    :param InterfaceObject:
+    :return:
+    '''
     print('AddTrace({})'.format(InterfaceObject))
     OldRxHandler = InterfaceObject.ReceiveData
 
@@ -470,8 +535,14 @@ def AddTrace(InterfaceObject):
 
 ConnectionStatus = {}
 
-
 def isConnected(interface):
+    '''
+    The programmer must call HandleConnection(interface) before caling isConnected(). If not this will return False always.
+    This will return True if the interface is logically or physically connected .
+    This will return False if the interface is logically or physically disconnected.
+    :param interface: extronlib.interface.*
+    :return: bool
+    '''
     if interface in ConnectionStatus:
         c = ConnectionStatus[interface]
         if c == 'Connected':
@@ -499,7 +570,7 @@ GREEN = 2
 RED = 1
 WHITE = 0
 
-def NewStatus(interface, state, Type='Unknown'):
+def _NewStatus(interface, state, Type='Unknown'):
     if not interface in ConnectionStatus:
         ConnectionStatus[interface] = 'Default'
 
@@ -557,17 +628,17 @@ def AddStatusButton(interface, btn):
 
 def HandleConnection(interface):
     '''
-    This will try to open a IP connection to the interface.
-    It will retry every X seconds until it is connected.
-
-    v1_0_3 - also handles UIDevice, ProcessorDevice, SerialInterface, UDP
-    v1_0_2 - calls interface.OnConnected when connected, if it exist
+    This will attempt to maintain the connection to the interface.
+     The programmer can call isConnected(interface) to find if this interface is connected.
+     Also the connection status will be logged to a file 'connection.log' on the processor.
+    :param interface: extronlib.interface.* instance
+    :return:
     '''
     print('HandleConnection(interface={})'.format(interface))
-    NewStatus(interface, 'Default')
+    _NewStatus(interface, 'Default')
 
     # Physical connection status
-    def PhysicalConnectionHandler(interface, state):
+    def _PhysicalConnectionHandler(interface, state):
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
             # The client object gets passed into the connection handler instead of the server interface.
             # Look thru all the interfaces and see if this client object exist inside one of the server interfaces
@@ -625,38 +696,38 @@ def HandleConnection(interface):
             elif isinstance(interface, extronlib.interface.SerialInterface):
                 print('Proc {} Port {} {}'.format(interface.Host.DeviceAlias, interface.Port, state))
 
-        NewStatus(interface, state, 'Physically')
+        _NewStatus(interface, state, 'Physically')
 
     # Assign the pysical handler appropriately
     if isinstance(interface, UIDevice):
-        interface.Online = PhysicalConnectionHandler
-        interface.Offline = PhysicalConnectionHandler
+        interface.Online = _PhysicalConnectionHandler
+        interface.Offline = _PhysicalConnectionHandler
 
     elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
               isinstance(interface, extronlib.interface.SerialInterface) or
               isinstance(interface, extronlib.interface.EthernetServerInterfaceEx)
               ):
-        interface.Connected = PhysicalConnectionHandler
-        interface.Disconnected = PhysicalConnectionHandler
+        interface.Connected = _PhysicalConnectionHandler
+        interface.Disconnected = _PhysicalConnectionHandler
 
     # Module Connection status
-    def GetModuleCallback(interface):
-        def ModuleConnectionCallback(command, value, qualifier):
-            print('ModuleConnectionCallback\ninterface={}\nvalue={}'.format(interface,
+    def _GetModuleCallback(interface):
+        def _module_connection_callback(command, value, qualifier):
+            print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface,
                                                                                                       value))
 
-            NewStatus(interface, value, 'Logically')
+            _NewStatus(interface, value, 'Logically')
             if value == 'Disconnected':
                 if isinstance(interface, extronlib.interface.EthernetClientInterface):
                     interface.Disconnect()
 
-        return ModuleConnectionCallback
+        return _module_connection_callback
 
     if hasattr(interface, 'SubscribeStatus'):
-        interface.SubscribeStatus('ConnectionStatus', None, GetModuleCallback(interface))
+        interface.SubscribeStatus('ConnectionStatus', None, _GetModuleCallback(interface))
 
     else:  # Does not have attribute 'SubscribeStatus'
-        AddLogicalConnectionHandling(interface, limit=3, callback=GetModuleCallback(interface))
+        _AddLogicalConnectionHandling(interface, limit=3, callback=_GetModuleCallback(interface))
 
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
         if interface.Protocol == 'TCP':  # UDP is "connection-less"
@@ -669,22 +740,13 @@ def HandleConnection(interface):
     elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
         interface.StartListen()
 
-def isConnected(interface):
-    if interface in ConnectionStatus:
-        if ConnectionStatus[interface] in ['Online', 'Connected']:
-            return True
-        else:
-            return False
-    else:
-        return False
-
 # Logical Handler ***************************************************************
-SendCounter = {  # interface: count
+_connection_send_counter = {  # interface: count
     # count = int(), number of queries that have been send since the last Rx
 }
-Callbacks = {}
+_connection_callbacks = {}
 
-def AddLogicalConnectionHandling(interface, limit=3, callback=None):
+def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
     '''
     callback should accept 3 params
         interface > extronlib.interface.EthernetClientInterface or extronlib.interface.SerialInterface or sub-class
@@ -693,20 +755,20 @@ def AddLogicalConnectionHandling(interface, limit=3, callback=None):
     if (isinstance(interface, EthernetClientInterface) or
             isinstance(interface, SerialInterface)
         ):
-        Callbacks[interface] = callback
+        _connection_callbacks[interface] = callback
 
-        if interface not in SendCounter:
-            SendCounter[interface] = 0
+        if interface not in _connection_send_counter:
+            _connection_send_counter[interface] = 0
 
         # Make new send method
         OldSend = interface.Send
 
         def NewSend(*args, **kwargs):
             # print('NewSend *args=', args, ', kwargs=', kwargs) # debugging
-            SendCounter[interface] += 1
+            _connection_send_counter[interface] += 1
 
             if callback:
-                if SendCounter[interface] > limit:
+                if _connection_send_counter[interface] > limit:
                     callback('ConnectionStatus', 'Disconnected', None)
 
             OldSend(*args, **kwargs)
@@ -718,10 +780,10 @@ def AddLogicalConnectionHandling(interface, limit=3, callback=None):
         def NewSendAndWait(*args, **kwargs):
             # print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
 
-            SendCounter[interface] += 1
+            _connection_send_counter[interface] += 1
 
             if callback:
-                if SendCounter[interface] > limit:
+                if _connection_send_counter[interface] > limit:
                     callback('ConnectionStatus', 'Disconnected', None)
 
             return OldSendAndWait(*args, **kwargs)
@@ -741,14 +803,19 @@ def AddLogicalConnectionHandling(interface, limit=3, callback=None):
         # interface.ReceiveData = NewRx
 
 def ConnectionHandlerLogicalReset(interface):
-    # This needs to be called by the ReceiveData event elsewhere in code
-    SendCounter[interface] = 0
-    Callbacks[interface]('ConnectionStatus', 'Connected', None)
+    '''
+    This needs to be called by the programmer when a valid command is received by the interface.
+    Usually called within ReceiveData event.
+    :param interface: extronlib.interface.* instance
+    :return:
+    '''
+    _connection_send_counter[interface] = 0
+    _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
 
 # Polling Engine ****************************************************************
 class PollingEngine():
     '''
-    This class lets you add a bunch of queries for differnt devices.
+    This class lets you add a bunch of queries for different devices.
     The PollingEngine object will then send 1 query per second when started
     '''
 
@@ -778,15 +845,12 @@ class PollingEngine():
 
     def AddQuery(self, interface, command, qualifier=None):
         '''
-        This adds a query to the list of queries that will be sent.
-        One query per second.
+        This info will be used to send a interface.Update(command, qualifier) later.
 
-        QueryDict should be a dictionary in the following format
-        {'Interface' : DMP3,
-         'Command'   : 'GroupMute',
-         'Qualifier' : {'Group' : '1'},
-         }
-
+        :param interface: extronlib.interface.*
+        :param command: str
+        :param qualifier: dict
+        :return:
         '''
         QueryDict = {'Interface': interface,
                      'Command': command,
@@ -805,7 +869,7 @@ class PollingEngine():
 
     def RemoveQuery(self, QueryDict):
         '''
-        Removes the query from self.Queries.
+        Removes the query from polling engine
         For example, if the system is off, we do not need to poll for input signal status on a video switcher.
         '''
         for Dict in self.Queries:

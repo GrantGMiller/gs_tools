@@ -593,7 +593,7 @@ def HandleConnection(interface):
 
 
 
-        print('connection_handler_v1_0_6 PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
+        print('PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
 
         # Handle the Disconnectec/Offline event
         if state in ['Disconnected', 'Offline']:
@@ -639,7 +639,7 @@ def HandleConnection(interface):
     # Module Connection status
     def GetModuleCallback(interface):
         def ModuleConnectionCallback(command, value, qualifier):
-            print('connection_handler_v1_0_6 ModuleConnectionCallback\ninterface={}\nvalue={}'.format(interface,
+            print('ModuleConnectionCallback\ninterface={}\nvalue={}'.format(interface,
                                                                                                       value))
 
             NewStatus(interface, value, 'Logically')
@@ -1141,20 +1141,25 @@ def RemoteTrace(IPPort=1024):
 
 
 def toPercent(Value, Min=0, Max=100):
-    if Value < Min:
+    try:
+        if Value < Min:
+            return 0
+        elif Value > Max:
+            return 100
+
+        TotalRange = Max - Min
+        # print('TotalRange=', TotalRange)
+
+        FromMinToValue = Value - Min
+        # print('FromMinToValue=', FromMinToValue)
+
+        Percent = (FromMinToValue / TotalRange) * 100
+
+        return Percent
+    except Exception as e:
+        print(e)
+        ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'Error')
         return 0
-    elif Value > Max:
-        return 100
-
-    TotalRange = Max - Min
-    # print('TotalRange=', TotalRange)
-
-    FromMinToValue = Value - Min
-    # print('FromMinToValue=', FromMinToValue)
-
-    Percent = (FromMinToValue / TotalRange) * 100
-
-    return Percent
 
 
 def IncrementIP(IP):

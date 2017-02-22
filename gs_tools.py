@@ -529,7 +529,10 @@ def NewStatus(interface, state, Type='Unknown'):
                 file.write('{} - UIDevice:{} {} {}\n'.format(time.asctime(), alias, Type, state))
 
             else:
-                file.write('{} - {} {} {}\n'.format(time.asctime(), interface, Type, state))
+                if hasattr(interface, 'IPAddress'):
+                    file.write('{} -  {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
+                else:
+                    file.write('{} - {} {} {}\n'.format(time.asctime(), interface, Type, state))
 
     if interface in StatusButtons:
         btnList = StatusButtons[interface]

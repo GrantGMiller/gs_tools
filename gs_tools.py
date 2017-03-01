@@ -1252,5 +1252,16 @@ def IncrementIP(IP):
 
     return str(Oct1) + '.' + str(Oct2) + '.' + str(Oct3) + '.' + str(Oct4)
 
+def GetKeyFromValue(d, v):
+    '''
+    This function does  a "reverse-lookup" in a dictionary.
+    You give this function a value and it returns the key
+    :param d: dictionary
+    :param v: value within d
+    :return: first key from d that has the value = v. If v is not found in v, return None
+    '''
+    for k in d:
+        if d[k] == v:
+            return k
 
 print('End  GST')

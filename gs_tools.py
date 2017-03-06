@@ -440,7 +440,7 @@ class VolumeHandler():
         :param BtnMute: extronlib.ui.Button instance
         :param repeatTime: float
         :param stepSize: float
-        :param Interface: extronlib.interface.* instance
+        :param Interface: Extron driver module.
         :param GainCommand: str
         :param GainQualifier: dict
         :param MuteCommand: str
@@ -986,8 +986,15 @@ class VisualFeedbackHandler():
 
                 # Instance methods
 
-    def TextFeedback(self, feedbackObject, text=None, interface=None, command=None, value=None, qualifier=None,
-                     callback=None, match=False):
+    def TextFeedback(self,
+                     feedbackObject,
+                     text=None,
+                     interface=None,
+                     command=None,
+                     value=None,
+                     qualifier=None,
+                     callback=None,
+                     match=False):
         # print('TextFeedback')
         # Create the new dict to be saved
         NewDict = {'feedbackObject': feedbackObject,
@@ -1043,8 +1050,15 @@ class VisualFeedbackHandler():
         except:
             pass
 
-    def LevelFeedback(self, feedbackObject, interface, command, qualifier=None, callback=None, max_=100, min_=0,
-                      step=1):
+    def LevelFeedback(self,
+                      feedbackObject, #extronlib.ui.Level instance
+                      interface, #Extron driver module
+                      command, #str
+                      qualifier=None, #dict
+                      callback=None, #function
+                      max_=100, #float
+                      min_=0, #float
+                      step=1): #float
         # print('StateFeedback')
         # Create the new dict to be saved
         NewDict = {'feedbackObject': feedbackObject,
@@ -1250,11 +1264,11 @@ def IncrementIP(IP):
                 if Oct1 > 255:
                     Oct1 = 0
 
-    return str(Oct1) + '.' + str(Oct2) + '.' + str(Oct3) + '.' + str(Oct4)
+    return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
 
 def GetKeyFromValue(d, v):
     '''
-    This function does  a "reverse-lookup" in a dictionary.
+    This function does a "reverse-lookup" in a dictionary.
     You give this function a value and it returns the key
     :param d: dictionary
     :param v: value within d

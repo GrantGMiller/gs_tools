@@ -461,14 +461,15 @@ class VolumeHandler():
 
             Interface.Set(GainCommand, NewLevel, GainQualifier)
 
-        @event(BtnMute, 'Pressed')
-        def BtnMutePressed(button, state):
-            CurrentMute = Interface.ReadStatus(MuteCommand, MuteQualifier)
-            if CurrentMute == 'Off':
-                NewMute = 'On'
-            else:
-                NewMute = 'Off'
-            Interface.Set(MuteCommand, NewMute, MuteQualifier)
+        if BtnMute:
+            @event(BtnMute, 'Pressed')
+            def BtnMutePressed(button, state):
+                CurrentMute = Interface.ReadStatus(MuteCommand, MuteQualifier)
+                if CurrentMute == 'Off':
+                    NewMute = 'On'
+                else:
+                    NewMute = 'Off'
+                Interface.Set(MuteCommand, NewMute, MuteQualifier)
 
 
 # These functions/classes help to assign feedback to Buttons/Labels/Levels, etc

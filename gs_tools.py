@@ -453,6 +453,8 @@ class VolumeHandler():
         @event([BtnUp, BtnDown], ['Pressed', 'Repeated'])
         def BtnUpDownEvent(button, state):
             CurrentLevel = Interface.ReadStatus(GainCommand, GainQualifier)
+            if CurrentLevel is None:
+                CurrentLevel = -100
 
             if button == BtnUp:
                 NewLevel = CurrentLevel + stepSize
@@ -856,6 +858,7 @@ class PollingEngine():
         QueryDict = {'Interface': interface,
                      'Command': command,
                      'Qualifier': qualifier,
+                     'Type': 'Module',
                      }
 
         print('PollingEngine.AddQuery({})'.format(QueryDict))
@@ -867,6 +870,16 @@ class PollingEngine():
             self.Generator = self.GetNewGenerator()
         else:
             raise Exception('Not a valid Query Dict')
+
+    def AddRawQuery(self, interface, command='q'):
+        QueryDict = {'Interface': interface,
+                     'Command': command,
+                     'Qualifier': None,
+                     'Type': 'Raw',
+                     }
+        print('PollingEngine.AddRawQuery({})'.format(QueryDict))
+        self.Queries.append(QueryDict)
+        self.Generator = self.GetNewGenerator()
 
     def RemoveQuery(self, QueryDict):
         '''
@@ -913,7 +926,10 @@ class PollingEngine():
             # print('QueryInfo=', QueryInfo)
 
             # Send the Query
-            Interface.Update(Command, Qualifier)
+            if Type == 'Module':
+                Interface.Update(Command, Qualifier)
+            elif Type == 'Raw':
+                Interface.Send(Command)
 
         except Exception as e:
             print(

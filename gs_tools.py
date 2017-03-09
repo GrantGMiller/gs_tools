@@ -605,6 +605,11 @@ def _NewStatus(interface, state, Type='Unknown'):
             else:
                 if hasattr(interface, 'IPAddress'):
                     file.write('{} -  {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
+                elif hasattr(interface, 'Port'):
+                        if hasattr(interface, 'Host'):
+                            file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface.Host.IPAddress, interface.Port, Type, state))
+                        else:
+                            file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface, interface.Port, Type, state))
                 else:
                     file.write('{} - {} {} {}\n'.format(time.asctime(), interface, Type, state))
 
@@ -881,6 +886,7 @@ class PollingEngine():
         self.Queries.append(QueryDict)
         self.Generator = self.GetNewGenerator()
 
+
     def RemoveQuery(self, QueryDict):
         '''
         Removes the query from polling engine
@@ -921,6 +927,7 @@ class PollingEngine():
             Interface = QueryInfo['Interface']
             Command = QueryInfo['Command']
             Qualifier = QueryInfo['Qualifier']
+            Type = QueryInfo['Type']
 
             # For debugging
             # print('QueryInfo=', QueryInfo)

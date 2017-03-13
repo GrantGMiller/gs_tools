@@ -604,7 +604,7 @@ def _NewStatus(interface, state, Type='Unknown'):
 
             else:
                 if hasattr(interface, 'IPAddress'):
-                    file.write('{} -  {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
+                    file.write('{} - {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
                 elif hasattr(interface, 'Port'):
                         if hasattr(interface, 'Host'):
                             file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface.Host.IPAddress, interface.Port, Type, state))
@@ -634,6 +634,12 @@ def AddStatusButton(interface, btn):
 
     StatusButtons[interface].append(btn)
 
+user_physical_connection_callbacks = {}
+
+def AddConnectionCallback(interface, callback):
+    user_physical_connection_callbacks[interface] = callback
+
+
 def HandleConnection(interface):
     '''
     This will attempt to maintain the connection to the interface.
@@ -647,6 +653,16 @@ def HandleConnection(interface):
 
     # Physical connection status
     def _PhysicalConnectionHandler(interface, state):
+        #If there is a user callback, do the callback
+        if interface in user_physical_connection_callbacks:
+            callback = user_physical_connection_callbacks[interface]
+            callback(interface, state)
+
+        #Reset the send-counter if applicable
+        if interface in _connection_send_counter:
+            if state == 'Connected':
+                _connection_send_counter[interface] = 0
+
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
             # The client object gets passed into the connection handler instead of the server interface.
             # Look thru all the interfaces and see if this client object exist inside one of the server interfaces
@@ -697,8 +713,8 @@ def HandleConnection(interface):
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
 
-            elif (isinstance(interface, UIDevice) or
-                      isinstance(interface, ProcessorDevice)):
+            elif (isinstance(interface, extronlib.device.UIDevice) or
+                      isinstance(interface, extronlib.device.ProcessorDevice)):
                 print('{} {}'.format(interface.DeviceAlias, state))
 
             elif isinstance(interface, extronlib.interface.SerialInterface):
@@ -707,7 +723,7 @@ def HandleConnection(interface):
         _NewStatus(interface, state, 'Physically')
 
     # Assign the pysical handler appropriately
-    if isinstance(interface, UIDevice):
+    if isinstance(interface, extronlib.device.UIDevice):
         interface.Online = _PhysicalConnectionHandler
         interface.Offline = _PhysicalConnectionHandler
 
@@ -721,8 +737,7 @@ def HandleConnection(interface):
     # Module Connection status
     def _GetModuleCallback(interface):
         def _module_connection_callback(command, value, qualifier):
-            print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface,
-                                                                                                      value))
+            print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface, value))
 
             _NewStatus(interface, value, 'Logically')
             if value == 'Disconnected':
@@ -760,7 +775,8 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         interface > extronlib.interface.EthernetClientInterface or extronlib.interface.SerialInterface or sub-class
         state > 'Connected' or 'Disconnected'
     '''
-    if (isinstance(interface, EthernetClientInterface) or
+
+    if (isinstance(interface, extronlib.interface.EthernetClientInterface) or
             isinstance(interface, SerialInterface)
         ):
         _connection_callbacks[interface] = callback
@@ -817,8 +833,13 @@ def ConnectionHandlerLogicalReset(interface):
     :param interface: extronlib.interface.* instance
     :return:
     '''
+    global _connection_callbacks
     _connection_send_counter[interface] = 0
-    _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
+
+    if interface in _connection_callbacks:
+        _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
+    else:
+        ProgramLog('interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(interface, _connection_callbacks, _connection_send_counter), 'info')
 
 # Polling Engine ****************************************************************
 class PollingEngine():

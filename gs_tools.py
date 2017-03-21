@@ -343,6 +343,9 @@ class UIDevice(extronlib.device.UIDevice):
         :param pageOrPopupName: string
         :return: bool
         '''
+
+        Result = 'Unknown'
+
         for PageName in self.PageData:
             if PageName == pageOrPopupName:
                 Result = self.PageData[PageName]
@@ -350,7 +353,6 @@ class UIDevice(extronlib.device.UIDevice):
 
         # If we get to this point, the page name was not found in self.PageData
         # Check self.PopupData
-        Result = 'Unknown'
 
         for PopupName in self.PopupData:
             if PopupName == pageOrPopupName:
@@ -639,6 +641,9 @@ user_physical_connection_callbacks = {}
 def AddConnectionCallback(interface, callback):
     user_physical_connection_callbacks[interface] = callback
 
+_server_timeout_counters = {#TODO - implement into HandleConnection
+    #extronlib.EthernetServerInterfaceEx.ClientObject : float(lastCommTime),
+}
 
 def HandleConnection(interface):
     '''
@@ -653,6 +658,7 @@ def HandleConnection(interface):
 
     # Physical connection status
     def _PhysicalConnectionHandler(interface, state):
+        #TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
         #If there is a user callback, do the callback
         if interface in user_physical_connection_callbacks:
             callback = user_physical_connection_callbacks[interface]

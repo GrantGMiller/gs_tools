@@ -120,6 +120,13 @@ class Button(extronlib.ui.Button):
         self.Released = NewFunc
         self._CheckEventHandlers()
 
+    def ShowPage(self, page):
+        def NewFunc(button, state):
+            button.Host.Showpage(popup)
+
+        self.Released = NewFunc
+        self._CheckEventHandlers()
+
     def HidePopup(self, popup):
         '''This method is used to simplify a button that just needs to hide a popup
         Example:
@@ -153,6 +160,9 @@ class Button(extronlib.ui.Button):
         :return:
         '''
         self.SetText(self.Text + text)
+
+    def BackspaceText(self):
+        self.SetText(self.Text[:-1])
 
     def ToggleVisibility(self):
         '''
@@ -202,6 +212,9 @@ class Label(extronlib.ui.Label):
 
     def AppendText(self, text):
         self.SetText(self.Text + text)
+
+    def BackspaceText(self):
+        self.SetText(self.Text[:-1])
 
 
 class Level(extronlib.ui.Level):

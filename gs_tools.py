@@ -581,8 +581,6 @@ with File('connection.log', mode='at') as file:
     file.write('\n{} - Processor Restarted\n\n'.format(time.asctime()))
 
 ConnectionStatus = {}
-ClientObjects = {#ClientObject: ServerObject,
-    }
 
 GREEN = 2
 RED = 1
@@ -683,17 +681,22 @@ def HandleConnection(interface, serverLimit=None):
             if state == 'Connected':
                 _connection_send_counter[interface] = 0
 
-        #Convert ClientObjects to ServerEx
+
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
+
             if serverLimit == 'One connection per IP':
-                for client in interface._parent.Clients:
-                    if client != interface:
-                        if client.IPAddress == interface.IPAddress:
-                            client.Disconnect() # There is another client connected from the same IP. Disconnect it.
+                if state == 'Connected':
+                    # Disconnect any other sockets that have connected from the same IP.
+                    # print('interface._parent.Clients=', interface._parent.Clients)
+                    # print('interface=', interface)
+                    for client in interface._parent.Clients:
+                        if client != interface:
+                            if client.IPAddress == interface.IPAddress:
+                                print('Only one connection allowed per IP.\nDisconnecting client=', client)
+                                client.Disconnect()  # There is another client connected from the same IP. Disconnect it.
 
-
-
-            interface = interface._parent # This attribute is not documented.
+            # Convert ClientObjects to ServerEx
+            interface = interface._parent # This "_parent" attribute is not documented. Shhhh...
 
 
 

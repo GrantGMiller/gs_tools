@@ -1,5 +1,21 @@
 '''
-This module is meant to handle common functionality.
+This module is meant to provide common tools for GS programming.
+
+${PROJECT_NAME}
+${NAME}
+${USER}
+${DATE}
+${TIME}
+${YEAR}
+${MONTH}
+${DAY}
+${HOUR}
+${MINUTE}
+${PRODUCT_NAME}
+${MONTH_NAME_SHORT}
+${MONTH_NAME_FULL}
+
+
 '''
 print('Begin GST')
 
@@ -29,10 +45,10 @@ class Button(extronlib.ui.Button):
     def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
         '''
 
-        :param Host:
-        :param ID:
-        :param holdTime:
-        :param repeatTime:
+        :param Host: extronlib.device.UIDevice instance
+        :param ID: int()
+        :param holdTime: float()
+        :param repeatTime: float()
         :param PressFeedback: If you want the button to change states when you press/release, set this to 'State'
         '''
         extronlib.ui.Button.__init__(self, Host, ID, holdTime=holdTime, repeatTime=repeatTime)

@@ -1,21 +1,6 @@
 '''
-This module is meant to provide common tools for GS programming.
-
-${PROJECT_NAME}
-${NAME}
-${USER}
-${DATE}
-${TIME}
-${YEAR}
-${MONTH}
-${DAY}
-${HOUR}
-${MINUTE}
-${PRODUCT_NAME}
-${MONTH_NAME_SHORT}
-${MONTH_NAME_FULL}
-
-
+This module is meant to be a collection of tools to simplify common task in AV control systems.
+March 28, 2017
 '''
 print('Begin GST')
 
@@ -1354,5 +1339,16 @@ def GetKeyFromValue(d, v):
     for k in d:
         if d[k] == v:
             return k
+
+def phone_format(n):
+    n = strip_non_numbers(n)
+    return format(int(n[:-1]), ",").replace(",", "-") + n[-1]
+
+def strip_non_numbers(s):
+    new_s = ''
+    for ch in s:
+        if ch.isdigit():
+            new_s += ch
+    return new_s
 
 print('End  GST')

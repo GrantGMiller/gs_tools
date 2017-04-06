@@ -1,5 +1,6 @@
-from gs_tools import HandleConnection
-from extronlib import EthernetServerInterfaceEx
+from gs_tools import phone_format
 
-server = EthernetServerInterfaceEx(3888)
-HandleConnection(server)
+test = '918006339876*#'
+
+for i in range(len(test)):
+    phone_format(test[:i])

@@ -59,7 +59,7 @@ class Button(extronlib.ui.Button):
                 CurrentAtt = getattr(self, EventName)
                 LastAtt = getattr(self, 'Last' + EventName)
                 if CurrentAtt != LastAtt:
-                    # The curretn att has changed. make a new handler
+                    # The current att has changed. Make a new handler
 
                     def GetNewHandler(obj, evt):
                         # print('GetNewHandler Button ID {}, evt {}'.format(obj.ID, evt))
@@ -93,7 +93,7 @@ class Button(extronlib.ui.Button):
         This is used to change the button state based on a certain event.
         This is non-destructive. Your previously defined events will be maintained.
         :param eventName: ie. 'Pressed', 'Released', etc
-        :param buttonState: The button will change to this state when the even happens.
+        :param buttonState: The button will change to this state when the event happens.
         :return:
         '''
         self.StateChangeMap[eventName] = buttonState
@@ -199,8 +199,10 @@ class Button(extronlib.ui.Button):
         else:
             self.ToggleStateList = None
 
+
 class Knob(extronlib.ui.Knob):
     pass
+
 
 class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):
@@ -233,9 +235,11 @@ class MESet(extronlib.system.MESet):
 
 class Wait(extronlib.system.Wait):
     """Functions that are decorated with Wait now are callable elsewhere."""
+
     def __call__(self, function):
         super().__call__(function)
         return function
+
 
 class File(extronlib.system.File):
     pass
@@ -423,7 +427,7 @@ class event():
         for obj in self.objs:
             for eventName in self.eventNames:
                 setattr(obj, eventName, func)
-            if hasattr(obj, 'CheckEventHandlers'):
+            if hasattr(obj, '_CheckEventHandlers'):
                 obj._CheckEventHandlers()
         return func
 
@@ -554,6 +558,7 @@ def AddTrace(InterfaceObject):
 
 ConnectionStatus = {}
 
+
 def isConnected(interface):
     '''
     The programmer must call HandleConnection(interface) before caling isConnected(). If not this will return False always.
@@ -572,8 +577,8 @@ def isConnected(interface):
         return False
 
 
-#Connection Handler ***************************************************************
-#Globals
+# Connection Handler ***************************************************************
+# Globals
 if not File.Exists('connection.log'):
     file = File('connection.log', mode='wt')
     file.close()
@@ -586,6 +591,7 @@ ConnectionStatus = {}
 GREEN = 2
 RED = 1
 WHITE = 0
+
 
 def _NewStatus(interface, state, Type='Unknown'):
     if not interface in ConnectionStatus:
@@ -620,10 +626,12 @@ def _NewStatus(interface, state, Type='Unknown'):
                 if hasattr(interface, 'IPAddress'):
                     file.write('{} - {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
                 elif hasattr(interface, 'Port'):
-                        if hasattr(interface, 'Host'):
-                            file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface.Host.IPAddress, interface.Port, Type, state))
-                        else:
-                            file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface, interface.Port, Type, state))
+                    if hasattr(interface, 'Host'):
+                        file.write(
+                            '{} - {}:{} {} {}\n'.format(time.asctime(), interface.Host.IPAddress, interface.Port, Type,
+                                                        state))
+                    else:
+                        file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface, interface.Port, Type, state))
                 else:
                     file.write('{} - {} {} {}\n'.format(time.asctime(), interface, Type, state))
 
@@ -640,7 +648,9 @@ def _NewStatus(interface, state, Type='Unknown'):
                 btn.SetState(WHITE)
                 btn.SetText('Error')
 
+
 StatusButtons = {}
+
 
 def AddStatusButton(interface, btn):
     if interface not in StatusButtons:
@@ -648,14 +658,18 @@ def AddStatusButton(interface, btn):
 
     StatusButtons[interface].append(btn)
 
+
 user_physical_connection_callbacks = {}
+
 
 def AddConnectionCallback(interface, callback):
     user_physical_connection_callbacks[interface] = callback
 
-_server_timeout_counters = {#TODO - implement into HandleConnection
-    #extronlib.EthernetServerInterfaceEx.ClientObject : float(lastCommTime),
+
+_server_timeout_counters = {  # TODO - implement into HandleConnection
+    # extronlib.EthernetServerInterfaceEx.ClientObject : float(lastCommTime),
 }
+
 
 def HandleConnection(interface, serverLimit=None):
     '''
@@ -671,17 +685,16 @@ def HandleConnection(interface, serverLimit=None):
 
     # Physical connection status
     def _PhysicalConnectionHandler(interface, state):
-        #TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
-        #If there is a user callback, do the callback
+        # TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
+        # If there is a user callback, do the callback
         if interface in user_physical_connection_callbacks:
             callback = user_physical_connection_callbacks[interface]
             callback(interface, state)
 
-        #Reset the send-counter if applicable
+        # Reset the send-counter if applicable
         if interface in _connection_send_counter:
             if state == 'Connected':
                 _connection_send_counter[interface] = 0
-
 
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
 
@@ -697,9 +710,7 @@ def HandleConnection(interface, serverLimit=None):
                                 client.Disconnect()  # There is another client connected from the same IP. Disconnect it.
 
             # Convert ClientObjects to ServerEx
-            interface = interface._parent # This "_parent" attribute is not documented. Shhhh...
-
-
+            interface = interface._parent  # This "_parent" attribute is not documented. Shhhh...
 
         # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
         if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
@@ -747,7 +758,7 @@ def HandleConnection(interface, serverLimit=None):
     elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
               isinstance(interface, extronlib.interface.SerialInterface) or
               isinstance(interface, extronlib.interface.EthernetServerInterfaceEx)
-              ):
+          ):
         interface.Connected = _PhysicalConnectionHandler
         interface.Disconnected = _PhysicalConnectionHandler
 
@@ -780,11 +791,13 @@ def HandleConnection(interface, serverLimit=None):
     elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
         interface.StartListen()
 
+
 # Logical Handler ***************************************************************
 _connection_send_counter = {  # interface: count
     # count = int(), number of queries that have been send since the last Rx
 }
 _connection_callbacks = {}
+
 
 def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
     '''
@@ -843,6 +856,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         #
         # interface.ReceiveData = NewRx
 
+
 def ConnectionHandlerLogicalReset(interface):
     '''
     This needs to be called by the programmer when a valid command is received by the interface.
@@ -856,7 +870,10 @@ def ConnectionHandlerLogicalReset(interface):
     if interface in _connection_callbacks:
         _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
     else:
-        ProgramLog('interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(interface, _connection_callbacks, _connection_send_counter), 'info')
+        ProgramLog(
+            'interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(
+                interface, _connection_callbacks, _connection_send_counter), 'info')
+
 
 # Polling Engine ****************************************************************
 class PollingEngine():
@@ -923,7 +940,6 @@ class PollingEngine():
         print('PollingEngine.AddRawQuery({})'.format(QueryDict))
         self.Queries.append(QueryDict)
         self.Generator = self.GetNewGenerator()
-
 
     def RemoveQuery(self, QueryDict):
         '''
@@ -1113,14 +1129,14 @@ class VisualFeedbackHandler():
             pass
 
     def LevelFeedback(self,
-                      feedbackObject, #extronlib.ui.Level instance
-                      interface, #Extron driver module
-                      command, #str
-                      qualifier=None, #dict
-                      callback=None, #function
-                      max_=100, #float
-                      min_=0, #float
-                      step=1): #float
+                      feedbackObject,  # extronlib.ui.Level instance
+                      interface,  # Extron driver module
+                      command,  # str
+                      qualifier=None,  # dict
+                      callback=None,  # function
+                      max_=100,  # float
+                      min_=0,  # float
+                      step=1):  # float
         # print('StateFeedback')
         # Create the new dict to be saved
         NewDict = {'feedbackObject': feedbackObject,
@@ -1191,11 +1207,14 @@ def ShortenText(text, MaxLength=7, LineNums=2):
 
     return text
 
+
 def PrintProgramLog():
     """usage:
    print = PrintProgramLog()
    """
-    def print(*args, sep=' ', end='\n', severity='info', **kwargs):  # override the print function to write to program log instead
+
+    def print(*args, sep=' ', end='\n', severity='info',
+              **kwargs):  # override the print function to write to program log instead
         # Following is done to emulate behavior Python's print keyword arguments
         # (ie. you can set the arguments to None and it will do the default behavior)
         if sep is None:
@@ -1210,6 +1229,7 @@ def PrintProgramLog():
         ProgramLog(sep.join(string) + end, severity)
 
     return print
+
 
 class PersistantVariables():
     def __init__(self, filename):
@@ -1328,6 +1348,7 @@ def IncrementIP(IP):
 
     return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
 
+
 def GetKeyFromValue(d, v):
     '''
     This function does a "reverse-lookup" in a dictionary.
@@ -1340,6 +1361,7 @@ def GetKeyFromValue(d, v):
         if d[k] == v:
             return k
 
+
 def phone_format(n):
     try:
         n = strip_non_numbers(n)
@@ -1347,12 +1369,14 @@ def phone_format(n):
     except:
         return n
 
+
 def strip_non_numbers(s):
     new_s = ''
     for ch in s:
         if ch.isdigit():
             new_s += ch
     return new_s
+
 
 class Keyboard():
     '''
@@ -1374,7 +1398,7 @@ class Keyboard():
 
         self.TextFields = {}  # Format: {FeedbackObject : 'Text'}, this keeps track of the text on various Label objects.
 
-        self.bDelete = Button(TLP, BackspaceID, holdTime=0.1, repeatTime=0.1)
+        self.bDelete = extronlib.ui.Button(TLP, BackspaceID, holdTime=0.1, repeatTime=0.1)
 
         self.string = ''
 
@@ -1387,7 +1411,7 @@ class Keyboard():
 
             @event(self.bClear, 'Pressed')
             def clearPressed(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 self.ClearString()
 
         # Delete key
@@ -1395,7 +1419,7 @@ class Keyboard():
         @event(self.bDelete, 'Repeated')
         @event(self.bDelete, 'Released')
         def deletePressed(button, state):
-            print(button.Name, state)
+            # print(button.Name, state)
             if state == 'Pressed':
                 button.SetState(1)
 
@@ -1409,12 +1433,12 @@ class Keyboard():
         if SpaceBarID is not None:
             @event(extronlib.ui.Button(TLP, SpaceBarID), 'Pressed')
             def SpacePressed(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 self.AppendToString(' ')
 
         # Character Keys
         def CharacterPressed(button, state):
-            print(button.Name, state)
+            # print(button.Name, state)
             # print('Before self.CapsLock=', self.CapsLock)
             # print('Before self.ShiftMode=', self.ShiftMode)
 
@@ -1456,7 +1480,7 @@ class Keyboard():
             @event(self.ShiftKey, 'Held')
             @event(self.ShiftKey, 'Released')
             def ShiftKeyEvent(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 # print('Before self.CapsLock=', self.CapsLock)
                 # print('Before self.ShiftMode=', self.ShiftMode)
 
@@ -1497,22 +1521,23 @@ class Keyboard():
         self.updateLabel()
 
     def updateKeysShiftMode(self):
-        if self.ShiftMode == 'Upper':
-            self.ShiftKey.SetState(1)
+        if self.ShiftID is not None:
+            if self.ShiftMode == 'Upper':
+                self.ShiftKey.SetState(1)
 
-        elif self.ShiftMode == 'Lower':
-            self.ShiftKey.SetState(0)
+            elif self.ShiftMode == 'Lower':
+                self.ShiftKey.SetState(0)
 
-        for button in self.KeyButtons:
-            Char = button.Name
-            if Char:
-                if self.ShiftID is not None:
-                    if self.ShiftMode == 'Upper':
-                        Char = Char.upper()
-                    else:
-                        Char = Char.lower()
+            for button in self.KeyButtons:
+                Char = button.Name
+                if Char:
+                    if self.ShiftID is not None:
+                        if self.ShiftMode == 'Upper':
+                            Char = Char.upper()
+                        else:
+                            Char = Char.lower()
 
-                    button.SetText(Char)
+                        button.SetText(Char)
 
     # Define the class methods
     def GetString(self):
@@ -1576,8 +1601,6 @@ class Keyboard():
 
     def GetFeedbackObject(self):
         return self.FeedbackObject
-
-
 
 
 print('End  GST')

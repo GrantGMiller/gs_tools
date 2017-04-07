@@ -244,15 +244,6 @@ class Wait(extronlib.system.Wait):
 class File(extronlib.system.File):
     pass
 
-def ProgramLog(*args, **kwargs):
-    extronlib.system.ProgramLog(*args, **kwargs)
-    pass
-
-def Ping(*args, **kwargs):
-    extronlib.system.Ping(*args, **kwargs)
-    pass
-
-
 # extronlib.interface **************************************************************
 class ContactInterface(extronlib.interface.ContactInterface):
     pass

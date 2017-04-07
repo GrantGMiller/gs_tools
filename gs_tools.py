@@ -279,7 +279,33 @@ class RelayInterface(extronlib.interface.RelayInterface):
 
 
 class SerialInterface(extronlib.interface.SerialInterface):
-    pass
+    def __init__(self, *args, **kwargs):
+
+        #Save the used ports as attributes in the ProcessorDevice class
+        #Determine the Host
+        Host = None
+
+        if len(args) > 0:
+            Host = args[0]
+        else:
+            if 'Host' in kwargs:
+                Host = kwargs['Host']
+
+        #Determine the port
+        Port = None
+        if len(args) >= 2:
+            Port = args[1]
+        else:
+            if 'Port' in kwargs:
+                Port = kwargs['Port']
+
+        #Log the new port usage
+        if Host:
+            if Port:
+                ProcessorDevice.new_port_in_use(Host, Port)
+
+        #Init the super
+        super().__init__(*args, **kwargs)
 
 
 class SWPowerInterface(extronlib.interface.SWPowerInterface):
@@ -292,7 +318,32 @@ class VolumeInterface(extronlib.interface.VolumeInterface):
 
 # extronlib.device **************************************************************
 class ProcessorDevice(extronlib.device.ProcessorDevice):
-    pass
+
+    _used_ports = {#ProcessorDeviceObject: ['COM1', 'IRS1', ...]
+        }#class attributes
+
+    @classmethod
+    def new_port_in_use(cls, Host, Port):
+        if Host not in cls._used_ports:
+            cls._used_ports[Host] = []
+
+        cls._used_ports[Host].append(Port)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def port_in_use(self, port_str):
+        '''
+        returns True if 'COM1' has already been instantiated
+        :param port_str: string like 'COM1'
+        :return: bool
+        '''
+        port_list = self._used_ports[self]
+        if port_str in port_list:
+            return True
+        else:
+            return False
+
 
 
 class UIDevice(extronlib.device.UIDevice):

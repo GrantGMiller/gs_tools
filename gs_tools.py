@@ -8,7 +8,7 @@ import extronlib
 from extronlib import event
 from extronlib.device import ProcessorDevice, UIDevice
 from extronlib.interface import (EthernetClientInterface, SerialInterface)
-from extronlib.system import Wait, ProgramLog, File
+from extronlib.system import Wait, ProgramLog, File, Ping
 from extronlib.ui import Button, Level
 
 import json
@@ -244,6 +244,12 @@ class Wait(extronlib.system.Wait):
 class File(extronlib.system.File):
     pass
 
+class ProgramLog(extronlib.system.ProgramLog):
+    pass
+
+class Ping(extronlib.system.Ping):
+    pass
+
 
 # extronlib.interface **************************************************************
 class ContactInterface(extronlib.interface.ContactInterface):
@@ -331,13 +337,9 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self._used_ports[self] = []
 
     def port_in_use(self, port_str):
-        '''
-        returns True if 'COM1' has already been instantiated
-        :param port_str: string like 'COM1'
-        :return: bool
-        '''
         port_list = self._used_ports[self]
         if port_str in port_list:
             return True
@@ -1629,7 +1631,7 @@ class Keyboard():
         '''
         # print('updateLabel()')
         self.FeedbackObject.SetText(self.GetString())
-        print('self.FeedbackObject=', self.FeedbackObject)
+        #print('self.FeedbackObject=', self.FeedbackObject)
 
     def SetFeedbackObject(self, NewFeedbackObject):
         '''

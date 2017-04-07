@@ -1383,7 +1383,7 @@ class Keyboard():
 
         # Clear Key
         if ClearID is not None:
-            self.bClear = Button(TLP, ClearID)
+            self.bClear = extronlib.ui.Button(TLP, ClearID)
 
             @event(self.bClear, 'Pressed')
             def clearPressed(button, state):
@@ -1407,7 +1407,7 @@ class Keyboard():
             # Spacebar
 
         if SpaceBarID is not None:
-            @event(Button(TLP, SpaceBarID), 'Pressed')
+            @event(extronlib.ui.Button(TLP, SpaceBarID), 'Pressed')
             def SpacePressed(button, state):
                 print(button.Name, state)
                 self.AppendToString(' ')
@@ -1420,7 +1420,7 @@ class Keyboard():
 
             if state == 'Pressed':
                 button.SetState(1)
-                Char = button.Name.replace('ButtonKeyboard', '')
+                Char = button.Name
 
                 if ShiftID is not None:
                     if self.ShiftMode == 'Upper':
@@ -1442,14 +1442,14 @@ class Keyboard():
                 # print('After self.ShiftMode=', self.ShiftMode)
 
         for ID in KeyIDs:
-            NewButton = Button(TLP, ID)
+            NewButton = extronlib.ui.Button(TLP, ID)
             NewButton.Pressed = CharacterPressed
             NewButton.Released = CharacterPressed
             self.KeyButtons.append(NewButton)
 
         # Shift Key
         if ShiftID is not None:
-            self.ShiftKey = Button(TLP, ShiftID, holdTime=1)
+            self.ShiftKey = extronlib.ui.Button(TLP, ShiftID, holdTime=1)
 
             @event(self.ShiftKey, 'Pressed')
             @event(self.ShiftKey, 'Tapped')
@@ -1504,15 +1504,15 @@ class Keyboard():
             self.ShiftKey.SetState(0)
 
         for button in self.KeyButtons:
-            Char = button.Name.replace('ButtonKeyboard', '')
+            Char = button.Name
+            if Char:
+                if self.ShiftID is not None:
+                    if self.ShiftMode == 'Upper':
+                        Char = Char.upper()
+                    else:
+                        Char = Char.lower()
 
-            if self.ShiftID is not None:
-                if self.ShiftMode == 'Upper':
-                    Char = Char.upper()
-                else:
-                    Char = Char.lower()
-
-                button.SetText(Char)
+                    button.SetText(Char)
 
     # Define the class methods
     def GetString(self):

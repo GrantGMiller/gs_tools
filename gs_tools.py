@@ -15,6 +15,14 @@ import json
 import itertools
 import time
 
+#Set this false to disable all print statements ********************************
+debug = False
+if not debug:
+    def newPrint(*args, **kwargs):
+        pass
+    print = newPrint
+#*******************************************************************************
+
 
 # extronlib.ui *****************************************************************
 class Button(extronlib.ui.Button):
@@ -123,7 +131,7 @@ class Button(extronlib.ui.Button):
 
     def ShowPage(self, page):
         def NewFunc(button, state):
-            button.Host.Showpage(popup)
+            button.Host.ShowPage(popup)
 
         self.Released = NewFunc
         self._CheckEventHandlers()
@@ -199,9 +207,13 @@ class Button(extronlib.ui.Button):
         else:
             self.ToggleStateList = None
 
+    def __str__(self):
+        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+
 
 class Knob(extronlib.ui.Knob):
-    pass
+    def __str__(self):
+        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
 
 
 class Label(extronlib.ui.Label):
@@ -219,9 +231,13 @@ class Label(extronlib.ui.Label):
     def BackspaceText(self):
         self.SetText(self.Text[:-1])
 
+    def __str__(self):
+        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+
 
 class Level(extronlib.ui.Level):
-    pass
+    def __str__(self):
+        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
 
 
 # extronlib.system **************************************************************
@@ -279,7 +295,7 @@ class RelayInterface(extronlib.interface.RelayInterface):
 
 class SerialInterface(extronlib.interface.SerialInterface):
     def __init__(self, *args, **kwargs):
-
+        print('SerialInterface.__init__(args={}, kwargs={})'.format(args, kwargs))
         #Save the used ports as attributes in the ProcessorDevice class
         #Determine the Host
         Host = None
@@ -299,6 +315,7 @@ class SerialInterface(extronlib.interface.SerialInterface):
                 Port = kwargs['Port']
 
         #Log the new port usage
+        print('Host={},\n Port={}'.format(Host, Port))
         if Host:
             if Port:
                 ProcessorDevice.new_port_in_use(Host, Port)
@@ -327,13 +344,18 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
             cls._used_ports[Host] = []
 
         cls._used_ports[Host].append(Port)
+        print('cls._used_ports=', cls._used_ports)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._used_ports[self] = []
 
     def port_in_use(self, port_str):
+        print('ProcessorDevice.port_in_use\n self={}\n port_str={}'.format(self, port_str))
+        print('self._used_ports=', self._used_ports)
         port_list = self._used_ports[self]
+        print('port_list=', port_list)
+        print('port_str in port_list=', port_str in port_list)
         if port_str in port_list:
             return True
         else:
@@ -1450,6 +1472,7 @@ class Keyboard():
 
         self.CapsLock = False
         self.ShiftMode = 'Upper'
+        self._password_mode = False
 
         # Clear Key
         if ClearID is not None:
@@ -1599,6 +1622,7 @@ class Keyboard():
         '''
         # print('Keyboard.ClearString()')
         self.string = ''
+        self.ShiftID = 'Upper'
         self.updateLabel()
 
     def AppendToString(self, character=''):
@@ -1623,7 +1647,15 @@ class Keyboard():
         Updates the TLP label with the current self.string
         '''
         # print('updateLabel()')
-        self.FeedbackObject.SetText(self.GetString())
+        if self._password_mode:
+            pw_string = ''
+            for ch in self.GetString():
+                pw_string.append('*')
+            if self.FeedbackObject:
+                self.FeedbackObject.SetText(pw_string)
+        else:
+            if self.FeedbackObject:
+                self.FeedbackObject.SetText(self.GetString())
         #print('self.FeedbackObject=', self.FeedbackObject)
 
     def SetFeedbackObject(self, NewFeedbackObject):
@@ -1648,5 +1680,435 @@ class Keyboard():
     def GetFeedbackObject(self):
         return self.FeedbackObject
 
+    def set_password_mode(self, mode):
+        self._password_mode = mode
+
+
+#ScrollingTable ****************************************************************
+class ScrollingTable():
+
+    #helper class **************************************************************
+    class Cell():
+        def __init__(self, row, col, btn=None, callback=None):
+            self._row = row
+            self._col = col
+            self._btn = btn
+            self._callback = callback
+            self._Text = ''
+
+        def SetText(self, text):
+            if self._Text is not text:
+                self._btn.SetText(text)
+                self._Text = text
+
+        def __str__(self):
+            return 'Cell Object:\nrow={}\ncol={}\nbtn={}\ncallback={}'.format(self._row, self._col, self._btn, self._callback)
+
+    # class ********************************************************************
+    def __init__(self):
+        self._header_btns = []
+        self._cells = []
+        self._data_rows = [] #list of dicts. each list element is a row of data. represents the full spreadsheet.
+        self._current_row_offset = 0 #indicates the data row in the top left corner
+        self._current_col_offset = 0 #indicates the data col in the top left corner
+        self._max_row = 0
+        self._max_col = 0
+        self._table_header_order = []
+
+        def UpdateTable():
+            try:
+                self._update_table()
+            except Exception as e:
+                #need this try/except because current Wait class only shows generic "Wait error" message
+                print('Exception in self._update_table()\n', e)
+
+        self._refresh_Wait = Wait(0.1, UpdateTable)
+        self._refresh_Wait.Cancel()
+
+    def set_table_header_order(self, header_list=[]):
+        #header_list example: ['IP Address', 'Port']
+        all_headers = []
+        for row in self._data_rows:
+            for key in row:
+                if key not in all_headers:
+                    all_headers.append(key)
+
+        all_headers.sort() #if some headers are not defined, put them alphabetically
+
+        for key in header_list:
+            if key in all_headers:
+                all_headers.remove(key)
+
+        #now all_headers contains all headers that are not in header_list
+        header_list.extend(all_headers)
+        self._table_header_order = header_list
+
+        self._refresh_Wait.Restart()
+
+    def register_header_buttons(self, *args):
+        '''
+        example: ScrollingTable.register_header_buttons(Button(TLP, 1), Button(TLP, 2) )
+        '''
+        self._header_btns = []
+        for arg in args:
+            self._header_btns.append(arg)
+
+        self._refresh_Wait.Restart()
+
+    def register_row_buttons(self, row_number, *args):
+        ''' *args = tuple of Button objects
+        example:
+        ScrollingTable.register_row(row_number=1, Button(TLP, 1), Button(TLP, 2) )
+        '''
+        index = 0
+        for arg in args:
+            arg.SetText('')
+            col_number = index
+            self.register_cell(row_number, col_number, btn=arg, callback=self._cell_callback)
+            index +=1
+
+        self._refresh_Wait.Restart()
+
+    def add_new_row_data(self, row_dict):
+        '''example:
+        ScrollingTable.register_data_row({'key1':'value1', 'key2':'value2', ...})
+        '''
+        print('ScrollingTable.add_new_row_data(row_dict={})'.format(row_dict))
+        self._data_rows.append(row_dict)
+
+        for key in row_dict:
+            if key not in self._table_header_order:
+                self._table_header_order.append(key)
+
+        self._refresh_Wait.Restart()
+
+    def clear_all_data(self):
+        print('ScrollingTable.clear_all_data()')
+        self._data_rows = []
+        self._update_table()
+
+    def update_row_data(self, where_dict, replace_dict):
+        '''
+        Find a row in self._data_rows that containts all the key/value pairs from where_dict
+        replace/append the key/value pairs in that row with the key/values from replace_dict
+
+        '''
+        print('ScrollingTable.update_row_data(where_dict={}, replace_dict={})'.format(where_dict, replace_dict))
+        #Check the data for a row that containts the key/value pair from where_dict
+
+        if len(self._data_rows) == 0:
+            return False
+
+        for row in self._data_rows:
+            #verify all the keys from where_dict are in row and the values match
+            all_keys_match = True
+            for key in where_dict:
+                if key in row:
+                    if where_dict[key] != row[key]:
+                        all_keys_match = False
+                        break
+                else:
+                    all_keys_match = False
+                    break
+
+            if all_keys_match:
+                #All the key/values from where_dict match row, update row with replace dict values
+                for key in replace_dict:
+                    row[key] = replace_dict[key]
+
+        self._refresh_Wait.Restart()
+
+    def has_row(self, where_dict):
+        print('ScrollingTable.has_row(where_dict={})'.format(where_dict))
+        #Check the data for a row that containts the key/value pair from where_dict
+
+        if len(self._data_rows) == 0:
+            return False
+
+        for row in self._data_rows:
+            #verify all the keys from where_dict are in row and the values match
+            all_keys_match = True
+            for key in where_dict:
+                if key in row:
+                    if where_dict[key] != row[key]:
+                        all_keys_match = False
+                        break
+                else:
+                    all_keys_match = False
+                    break
+
+            if all_keys_match:
+                return True
+
+        return False
+
+
+    def register_cell(self, *args, **kwargs):
+        NewCell = self.Cell(*args, **kwargs)
+        self._cells.append(NewCell)
+
+        self._find_max_row_col()
+
+        self._refresh_Wait.Restart()
+
+    def _find_max_row_col(self):
+        for cell in self._cells:
+            if cell._col > self._max_col:
+                self._max_col = cell._col
+
+            if cell._row > self._max_row:
+                self._max_row = cell._row
+
+    def _cell_callback(self, cell):
+        print('ScrollingTable._cell_callback(\nself={},\ncell={},\n)'.format(self, cell))
+
+    def scroll_up(self):
+        print('ScrollingTable.scroll_up(self={})'.format(self))
+        self._current_row_offset -= 1
+        if self._current_row_offset < 0:
+            self._current_row_offset = 0
+
+        self._update_table()
+
+    def scroll_down(self):
+        print('ScrollingTable.scroll_down(self={})'.format(self))
+        self._current_row_offset += 1
+        if self._current_row_offset > self._max_row:
+            self._current_row_offset = self._max_row
+
+        self._update_table()
+
+    def scroll_left(self):
+        print('ScrollingTable.scroll_left(self={})'.format(self))
+        self._current_col_offset -= 1
+        if self._current_col_offset < 0:
+            self._current_col_offset = 0
+
+        self._update_table()
+
+    def scroll_right(self):
+        print('ScrollingTable.scroll_right(self={})'.format(self))
+        self._current_col_offset += 1
+        if self._current_col_offset > self._max_col:
+            self._current_col_offset = self._max_col
+
+        self._update_table()
+
+    def _update_table(self):
+        print('_update_table()')
+
+        #iterate over all the cell objects
+        for cell in self._cells:
+            row_index = cell._row + self._current_row_offset
+            if debug:
+                print('cell=', cell)
+                print('cell._row=', cell._row)
+                print('self._current_row_offset=', self._current_row_offset)
+                print('row_index=', row_index)
+                print('self._data_rows=', self._data_rows)
+
+            #Is there data for this cell to display?
+            if row_index <= len(self._data_rows) -1:
+                #Yes there is data for this cell to display
+
+                row_dict = self._data_rows[row_index]
+                #row_dict holds the data for this row
+                if debug: print('row_dict=', row_dict)
+
+                col_header_index = cell._col + self._current_col_offset
+                #col_header_index is int() base 0 (left most col is 0)
+                if debug: print('col_header_index=', col_header_index)
+
+                if debug: print('self._table_header_order=', self._table_header_order)
+                col_header = self._table_header_order[col_header_index]
+                if debug: print('col_header=', col_header)
+
+                if debug: print('row_dict=', row_dict)
+
+                if col_header in row_dict:
+                    cell_data = row_dict[col_header] #cell_data holds data for this cell
+                else:
+                    #There is no data for this column header
+                    cell_data = ''
+
+                if debug: print('cell_data=', cell_data)
+
+                cell.SetText(str(cell_data))
+            else:
+                #no data for this cell
+                cell.SetText('')
+
+    def get_column_buttons(self, col_number):
+        btn_list = []
+
+        for cell in self._cells:
+            if cell._col == col_number:
+                btn_list.append(cell._btn)
+
+        return btn_list
+
+    def get_row_from_button(self, button):
+        for cell in self._cells:
+            if cell._btn == button:
+                return cell._row
+
+        return None
+
+    def get_cell_value(self, row_number, col_number):
+        for cell in self._cells:
+            if cell._row == row_number:
+                if cell._col == col_number:
+                    return cell._btn.Text
+
+#UserInput *********************************************************************
+class UserInputClass:
+    def __init__(self, TLP):
+        self._TLP = TLP
+
+        self._kb_feedback_btn = None
+        self._kb_text_feedback = None
+
+    def setup_list(self,
+            list_popup_name, #str()
+            list_btn_hide, #Button object
+            list_btn_table, #list()
+            list_btn_scroll_up=None, #Button object
+            list_btn_scroll_down=None, #Button object
+            ):
+
+        self._list_popup_name = list_popup_name
+        self._list_table = ScrollingTable()
+        self._list_callback = None
+
+        #Setup the ScrollingTable
+        for btn in list_btn_table:
+
+            #Add an event handler for the table buttons
+            @event(btn, 'Released')
+            def list_btn_event(button, state):
+                if self._list_callback:
+                    if self._list_passthru:
+                        self._list_callback(self, button.Text, self._list_passthru)
+                    else:
+                        self._list_callback(self, button.Text)
+
+                if self._list_feedback_btn:
+                    self._list_feedback_btn.SetText(button.Text)
+
+                self._TLP.HidePopup(self._list_popup_name)
+
+            #Register the btn with the ScrollingTable instance
+            row_number = list_btn_table.index(btn)
+            self._list_table.register_row_buttons(row_number, btn)
+
+        #Setup Scroll buttons
+        if list_btn_scroll_up:
+            if not list_btn_scroll_up._repeatTime:
+                list_btn_scroll_up._repeatTime=0.1
+            @event(list_btn_scroll_up, ['Pressed', 'Repeated'])
+            def list_btn_scroll_upEvent(button, state):
+                self._list_table.scroll_up()
+
+        if list_btn_scroll_down:
+            if not list_btn_scroll_down._repeatTime:
+                list_btn_scroll_down._repeatTime=0.1
+            @event(list_btn_scroll_down, ['Pressed', 'Repeated'])
+            def list_btn_scroll_downEvent(button, state):
+                self._list_table.scroll_down()
+
+        #Hide button
+        if not list_btn_hide.Released:
+            list_btn_hide.Released = lambda b,s: b.Host.HidePopup(list_popup_name)
+
+    def get_list(self,
+            options=None, #list()
+            callback=None, #function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            passthru=None,#any object that you want to pass thru to the callback
+            ):
+        self._list_callback = callback
+        self._list_feedback_btn = feedback_btn
+        self._list_passthru = passthru
+
+        #Update the table with new data
+        self._list_table.clear_all_data()
+        for option in options:
+            self._list_table.add_new_row_data({'Option': option})
+
+        #Show the list popup
+        self._TLP.ShowPopup(self._list_popup_name)
+
+    def setup_keyboard(self,
+            kb_popup_name, #str()
+            kb_btn_submit, #Button()
+            kb_btn_cancel=None, #Button()
+
+
+            KeyIDs=None, #list()
+            BackspaceID=None, #int()
+            ClearID=None, #int()
+            SpaceBarID=None, #int()
+            ShiftID=None, #int()
+            FeedbackObject=None, #object with .SetText() method
+            ):
+
+        self._kb_popup_name = kb_popup_name
+
+        @event(kb_btn_submit, 'Released')
+        def kb_btn_submitEvent(button, state):
+            string = self._kb_Keyboard.GetString()
+            print('kb_btn_submitEvent\n button.ID={}\n state={}\n string={}'.format(button.ID, state, string))
+
+            if self._kb_callback:
+                if self._kb_passthru:
+                    self._kb_callback(self, string, self._kb_passthru)
+                else:
+                    self._kb_callback(self, string)
+
+            if self._kb_feedback_btn:
+                self._kb_feedback_btn.SetText(string)
+
+
+
+            self._TLP.HidePopup(self._kb_popup_name)
+
+        if kb_btn_cancel:
+            @event(kb_btn_cancel, 'Released')
+            def kb_btn_cancelEvent(button, state):
+                self._TLP.HidePopup(self._kb_popup_name)
+
+        self._kb_Keyboard = Keyboard(
+            TLP = self._TLP,
+            KeyIDs=KeyIDs, #list()
+            BackspaceID=BackspaceID, #int()
+            ClearID=ClearID, #int()
+            SpaceBarID=SpaceBarID, #int()
+            ShiftID=ShiftID, #int()
+            FeedbackObject=FeedbackObject, #object with .SetText() method
+            )
+
+    def get_keyboard(self,
+            kb_popup_name=None,
+            callback=None, #function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            password_mode=False,
+            text_feedback=None, #button()
+            passthru=None, #any object that you want to also come thru the callback
+            ):
+
+        if kb_popup_name:
+            self._kb_popup_name = kb_popup_name
+
+        if text_feedback:
+            self._kb_text_feedback = text_feedback #button to show text as it is typed
+            self._kb_Keyboard.SetFeedbackObject(self._kb_text_feedback)
+
+        self._kb_callback = callback #function accepts 2 params; this UserInput instance and the value submitted
+        self._kb_feedback_btn = feedback_btn #button to assign submitted value
+        self._kb_passthru = passthru
+
+        self._kb_Keyboard.ClearString()
+
+        self._TLP.ShowPopup(self._kb_popup_name)
 
 print('End  GST')

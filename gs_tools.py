@@ -14,6 +14,7 @@ from extronlib.ui import Button, Level
 import json
 import itertools
 import time
+import copy
 
 #Set this false to disable all print statements ********************************
 debug = False
@@ -51,10 +52,12 @@ class Button(extronlib.ui.Button):
         for EventName in self.EventNames:
             setattr(self, 'Last' + EventName, None)
 
-        if PressFeedback == 'State':
-            self.AutoStateChange('Pressed', 1)
-            self.AutoStateChange('Tapped', 0)
-            self.AutoStateChange('Released', 0)
+        enable_auto_change = False #set False for faster loading
+        if enable_auto_change:
+            if PressFeedback == 'State':
+                self.AutoStateChange('Pressed', 1)
+                self.AutoStateChange('Tapped', 0)
+                self.AutoStateChange('Released', 0)
 
         self.Text = ''
         self.ToggleStateList = None
@@ -131,7 +134,7 @@ class Button(extronlib.ui.Button):
 
     def ShowPage(self, page):
         def NewFunc(button, state):
-            button.Host.ShowPage(popup)
+            button.Host.ShowPage(page)
 
         self.Released = NewFunc
         self._CheckEventHandlers()
@@ -270,12 +273,13 @@ class DigitalIOInterface(extronlib.interface.DigitalIOInterface):
 
 
 class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
-    pass
+    def __str__(self):
+        return '{}, IPAddress={}, IPPort={}'.format(type(self), self.IPAddress, self.IPPort)
 
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
-    pass
-
+    def __str__(self):
+        return '{}, IPPort={}'.format(type(self), self.IPPort)
 
 class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
     pass
@@ -322,6 +326,9 @@ class SerialInterface(extronlib.interface.SerialInterface):
 
         #Init the super
         super().__init__(*args, **kwargs)
+
+    def __str__(self):
+        return '{}, Host.DeviceAlias={}, Port={}'.format(type(self), self.Host.DeviceAlias, self.Port)
 
 
 class SWPowerInterface(extronlib.interface.SWPowerInterface):
@@ -1685,6 +1692,7 @@ class Keyboard():
 
 
 #ScrollingTable ****************************************************************
+ScrollingTable_debug = False
 class ScrollingTable():
 
     #helper class **************************************************************
@@ -1785,6 +1793,7 @@ class ScrollingTable():
     def clear_all_data(self):
         print('ScrollingTable.clear_all_data()')
         self._data_rows = []
+        self.reset_scroll()
         self._update_table()
 
     def update_row_data(self, where_dict, replace_dict):
@@ -1900,7 +1909,7 @@ class ScrollingTable():
         #iterate over all the cell objects
         for cell in self._cells:
             row_index = cell._row + self._current_row_offset
-            if debug:
+            if ScrollingTable_debug:
                 print('cell=', cell)
                 print('cell._row=', cell._row)
                 print('self._current_row_offset=', self._current_row_offset)
@@ -1913,17 +1922,17 @@ class ScrollingTable():
 
                 row_dict = self._data_rows[row_index]
                 #row_dict holds the data for this row
-                if debug: print('row_dict=', row_dict)
+                if ScrollingTable_debug: print('row_dict=', row_dict)
 
                 col_header_index = cell._col + self._current_col_offset
                 #col_header_index is int() base 0 (left most col is 0)
-                if debug: print('col_header_index=', col_header_index)
+                if ScrollingTable_debug: print('col_header_index=', col_header_index)
 
-                if debug: print('self._table_header_order=', self._table_header_order)
+                if ScrollingTable_debug: print('self._table_header_order=', self._table_header_order)
                 col_header = self._table_header_order[col_header_index]
-                if debug: print('col_header=', col_header)
+                if ScrollingTable_debug: print('col_header=', col_header)
 
-                if debug: print('row_dict=', row_dict)
+                if ScrollingTable_debug: print('row_dict=', row_dict)
 
                 if col_header in row_dict:
                     cell_data = row_dict[col_header] #cell_data holds data for this cell
@@ -1931,7 +1940,7 @@ class ScrollingTable():
                     #There is no data for this column header
                     cell_data = ''
 
-                if debug: print('cell_data=', cell_data)
+                if ScrollingTable_debug: print('cell_data=', cell_data)
 
                 cell.SetText(str(cell_data))
             else:
@@ -1939,6 +1948,8 @@ class ScrollingTable():
                 cell.SetText('')
 
     def get_column_buttons(self, col_number):
+        #returns all buttons in the column.
+        #Note: they may not be in order
         btn_list = []
 
         for cell in self._cells:
@@ -1952,13 +1963,66 @@ class ScrollingTable():
             if cell._btn == button:
                 return cell._row
 
-        return None
+        raise Exception('Button {} not found in table'.format(button))
 
     def get_cell_value(self, row_number, col_number):
         for cell in self._cells:
             if cell._row == row_number:
                 if cell._col == col_number:
                     return cell._btn.Text
+
+        raise Exception('ScrollingTable.get_cell_value Not found. row_number={}, col_number={}'.format(row_number, col_number))
+
+    def reset_scroll(self):
+        self._current_row_offset = 0
+        self._refresh_Wait.Restart()
+
+    def sort_by_column(self, col_number):
+        print('ScrollingTable sort_by_column(col_number={})'.format(col_number))
+        print('self._data_rows=', self._data_rows)
+        all_values = []
+
+        col_header = self._table_header_order[col_number]
+
+        for row in self._data_rows:
+            if col_header in row:
+                all_values.append(row[col_header])
+
+        #We now have all the row values in all_values
+        all_values.sort() #Sort them
+
+        #We now have all the values sorted, but there may be duplicats
+        all_values_no_dup = []
+        for value in all_values:
+            if value not in all_values_no_dup:
+                all_values_no_dup.append(value)
+
+        all_values = all_values_no_dup
+        #We now have all the sorted values with no duplicates
+
+        new_rows = []
+        old_rows = copy.copy(self._data_rows) #dont want to modify the real data yet. in case this method crashes
+        temp_rows = copy.copy(old_rows) #dont want to change a list while interating thru it
+
+        for this_value in all_values:
+            for row in temp_rows:
+                index = temp_rows.index(row)
+                if col_header in row:
+                    if row[col_header] == this_value:
+                        move_row = old_rows.pop(index)
+                        new_rows.append(move_row)
+
+            #reset temp_rows
+            temp_rows = copy.copy(old_rows)
+
+        #new_rows now contains all the row data from the sorted values
+        #new_rows may be missing some rows that did not have col_header
+
+        #old_rows contains any leftovers, move them to new_rows
+        new_rows.extend(old_rows)
+        print('sorted new_rows=', new_rows)
+        self._data_rows = new_rows
+        self._refresh_Wait.Restart()
 
 #UserInput *********************************************************************
 class UserInputClass:
@@ -1974,11 +2038,13 @@ class UserInputClass:
             list_btn_table, #list()
             list_btn_scroll_up=None, #Button object
             list_btn_scroll_down=None, #Button object
+            list_label_message=None, #Button/Label object
             ):
 
         self._list_popup_name = list_popup_name
         self._list_table = ScrollingTable()
         self._list_callback = None
+        self._list_label_message = list_label_message
 
         #Setup the ScrollingTable
         for btn in list_btn_table:
@@ -1986,8 +2052,10 @@ class UserInputClass:
             #Add an event handler for the table buttons
             @event(btn, 'Released')
             def list_btn_event(button, state):
+                print('list_btn_event')
+                print('self._list_passthru=', self._list_passthru)
                 if self._list_callback:
-                    if self._list_passthru:
+                    if self._list_passthru is not None:
                         self._list_callback(self, button.Text, self._list_passthru)
                     else:
                         self._list_callback(self, button.Text)
@@ -2017,14 +2085,16 @@ class UserInputClass:
                 self._list_table.scroll_down()
 
         #Hide button
-        if not list_btn_hide.Released:
-            list_btn_hide.Released = lambda b,s: b.Host.HidePopup(list_popup_name)
+        @event(list_btn_hide, 'Released')
+        def list_btn_hideEvent(button, state):
+            button.Host.HidePopup(list_popup_name)
 
     def get_list(self,
             options=None, #list()
             callback=None, #function - should take 2 params, the UserInput instance and the value the user submitted
             feedback_btn=None,
             passthru=None,#any object that you want to pass thru to the callback
+            message=None,
             ):
         self._list_callback = callback
         self._list_feedback_btn = feedback_btn
@@ -2034,6 +2104,12 @@ class UserInputClass:
         self._list_table.clear_all_data()
         for option in options:
             self._list_table.add_new_row_data({'Option': option})
+
+        if self._list_label_message:
+            if message:
+                self._list_label_message.SetText(message)
+            else:
+                self._list_label_message.SetText('Select an item from the list.')
 
         #Show the list popup
         self._TLP.ShowPopup(self._list_popup_name)
@@ -2067,8 +2143,6 @@ class UserInputClass:
 
             if self._kb_feedback_btn:
                 self._kb_feedback_btn.SetText(string)
-
-
 
             self._TLP.HidePopup(self._kb_popup_name)
 

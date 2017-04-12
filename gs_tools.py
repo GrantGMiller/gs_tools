@@ -263,8 +263,6 @@ class Wait(extronlib.system.Wait):
 class File(extronlib.system.File):
     pass
 
-class RFile(extronlib.system.RFile):
-    pass
 
 # extronlib.interface **************************************************************
 class ContactInterface(extronlib.interface.ContactInterface):
@@ -761,10 +759,17 @@ def HandleConnection(interface, serverLimit=None):
     print('HandleConnection(interface={})'.format(interface))
     _NewStatus(interface, 'Default')
 
+    if isinstance(interface, extronlib.interface.EthernetClientInterface):
+        if interface.Protocol == 'TCP':  # UDP is "connection-less"
+            WaitReconnect = Wait(5, interface.Connect)
+            WaitReconnect.Cancel()
+
     # Physical connection status
     def _PhysicalConnectionHandler(interface, state):
         # TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
         # If there is a user callback, do the callback
+
+
         if interface in user_physical_connection_callbacks:
             callback = user_physical_connection_callbacks[interface]
             callback(interface, state)
@@ -803,7 +808,8 @@ def HandleConnection(interface, serverLimit=None):
         if state in ['Disconnected', 'Offline']:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    WaitReconnect.Restart()
+                    if interface in ConnectionStatus:
+                        WaitReconnect.Restart()
 
         # Handle the Connected/Online event
         elif state in ['Connected', 'Online']:
@@ -856,12 +862,11 @@ def HandleConnection(interface, serverLimit=None):
         interface.SubscribeStatus('ConnectionStatus', None, _GetModuleCallback(interface))
 
     else:  # Does not have attribute 'SubscribeStatus'
-        _AddLogicalConnectionHandling(interface, limit=3, callback=_GetModuleCallback(interface))
-
-    if isinstance(interface, extronlib.interface.EthernetClientInterface):
-        if interface.Protocol == 'TCP':  # UDP is "connection-less"
-            WaitReconnect = Wait(5, interface.Connect)
-            WaitReconnect.Cancel()
+        if isinstance(interface, extronlib.interface.SerialInterface):
+            limit = 15 #serial data tends to get "chopped up" so this limit should be larger
+        else:
+            limit = 15
+        _AddLogicalConnectionHandling(interface, limit=limit, callback=_GetModuleCallback(interface))
 
     # Start the connection
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
@@ -896,7 +901,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         OldSend = interface.Send
 
         def NewSend(*args, **kwargs):
-            # print('NewSend *args=', args, ', kwargs=', kwargs) # debugging
+            print('NewSend\n interface={}\n args={}\n kwargs={}\n count={}\n limit={}'.format(interface, args, kwargs, _connection_send_counter[interface], limit)) # debugging
             _connection_send_counter[interface] += 1
 
             if callback:
@@ -948,9 +953,10 @@ def ConnectionHandlerLogicalReset(interface):
     if interface in _connection_callbacks:
         _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
     else:
-        ProgramLog(
-            'interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(
-                interface, _connection_callbacks, _connection_send_counter), 'info')
+        #ProgramLog(
+            #'interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(
+                #interface, _connection_callbacks, _connection_send_counter), 'info')
+        pass
 
 
 # Polling Engine ****************************************************************

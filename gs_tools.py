@@ -8,13 +8,14 @@ import extronlib
 from extronlib import event
 from extronlib.device import ProcessorDevice, UIDevice
 from extronlib.interface import (EthernetClientInterface, SerialInterface)
-from extronlib.system import Wait, ProgramLog, File, Ping
+from extronlib.system import Wait, ProgramLog, File, Ping, RFile
 from extronlib.ui import Button, Level
 
 import json
 import itertools
 import time
 import copy
+import hashlib
 
 #Set this false to disable all print statements ********************************
 debug = False
@@ -52,12 +53,11 @@ class Button(extronlib.ui.Button):
         for EventName in self.EventNames:
             setattr(self, 'Last' + EventName, None)
 
-        enable_auto_change = False #set False for faster loading
-        if enable_auto_change:
-            if PressFeedback == 'State':
-                self.AutoStateChange('Pressed', 1)
-                self.AutoStateChange('Tapped', 0)
-                self.AutoStateChange('Released', 0)
+
+        #if PressFeedback == 'State':
+            #self.AutoStateChange('Pressed', 1)
+            #self.AutoStateChange('Tapped', 0)
+            #self.AutoStateChange('Released', 0)
 
         self.Text = ''
         self.ToggleStateList = None
@@ -261,6 +261,9 @@ class Wait(extronlib.system.Wait):
 
 
 class File(extronlib.system.File):
+    pass
+
+class RFile(extronlib.system.RFile):
     pass
 
 # extronlib.interface **************************************************************
@@ -1473,7 +1476,7 @@ class Keyboard():
 
         self.TextFields = {}  # Format: {FeedbackObject : 'Text'}, this keeps track of the text on various Label objects.
 
-        self.bDelete = extronlib.ui.Button(TLP, BackspaceID, holdTime=0.1, repeatTime=0.1)
+        self.bDelete = extronlib.ui.Button(TLP, BackspaceID, holdTime=0.2, repeatTime=0.1)
 
         self.string = ''
 
@@ -1657,7 +1660,7 @@ class Keyboard():
         if self._password_mode:
             pw_string = ''
             for ch in self.GetString():
-                pw_string.append('*')
+                pw_string += '*'
             if self.FeedbackObject:
                 self.FeedbackObject.SetText(pw_string)
         else:
@@ -1692,22 +1695,44 @@ class Keyboard():
 
 
 #ScrollingTable ****************************************************************
-ScrollingTable_debug = False
+ScrollingTable_debug = True
 class ScrollingTable():
 
     #helper class **************************************************************
     class Cell():
-        def __init__(self, row, col, btn=None, callback=None):
+        def __init__(self, parent_table, row, col, btn=None, callback=None):
+            self._parent_table = parent_table
             self._row = row
             self._col = col
             self._btn = btn
             self._callback = callback
             self._Text = ''
 
+            OldHandler = self._btn.Released
+            def NewHandler(button, state):
+                print('Cell NewHandler(\n button={}\n state={}'.format(button, state))
+                if OldHandler:
+                    OldHandler(button, state)
+                if self._callback:
+                    self._callback(self._parent_table, self)
+            self._btn.Released = NewHandler
+
         def SetText(self, text):
             if self._Text is not text:
                 self._btn.SetText(text)
                 self._Text = text
+
+        def get_col(self):
+            return self._col
+
+        def get_row(self):
+            return self._row
+
+        def get_value(self):
+            return self._Text
+
+        def get_button(self):
+            return self._btn
 
         def __str__(self):
             return 'Cell Object:\nrow={}\ncol={}\nbtn={}\ncallback={}'.format(self._row, self._col, self._btn, self._callback)
@@ -1723,6 +1748,9 @@ class ScrollingTable():
         self._max_col = 0
         self._table_header_order = []
 
+        self._cell_pressed_callback = None
+        #_cell_pressed_callback should accept 2 params; the scrolling table object, and the cell object
+
         def UpdateTable():
             try:
                 self._update_table()
@@ -1732,6 +1760,16 @@ class ScrollingTable():
 
         self._refresh_Wait = Wait(0.1, UpdateTable)
         self._refresh_Wait.Cancel()
+
+    @property
+    def CellPressed(self): #getter
+        return self._cell_pressed_callback
+
+    @CellPressed.setter
+    def CellPressed(self, func):
+        self._cell_pressed_callback = func
+        for cell in self._cells:
+            cell._callback = func
 
     def set_table_header_order(self, header_list=[]):
         #header_list example: ['IP Address', 'Port']
@@ -1772,7 +1810,7 @@ class ScrollingTable():
         for arg in args:
             arg.SetText('')
             col_number = index
-            self.register_cell(row_number, col_number, btn=arg, callback=self._cell_callback)
+            self.register_cell(row_number, col_number, btn=arg, callback=self._cell_pressed_callback)
             index +=1
 
         self._refresh_Wait.Restart()
@@ -1829,9 +1867,12 @@ class ScrollingTable():
 
     def has_row(self, where_dict):
         print('ScrollingTable.has_row(where_dict={})'.format(where_dict))
+        if ScrollingTable_debug:
+            print('self._data_rows=', self._data_rows)
         #Check the data for a row that containts the key/value pair from where_dict
 
         if len(self._data_rows) == 0:
+            print('ScrollingTable.has_row return False')
             return False
 
         for row in self._data_rows:
@@ -1847,13 +1888,15 @@ class ScrollingTable():
                     break
 
             if all_keys_match:
+                print('ScrollingTable.has_row return True')
                 return True
 
+        print('ScrollingTable.has_row return True')
         return False
 
 
     def register_cell(self, *args, **kwargs):
-        NewCell = self.Cell(*args, **kwargs)
+        NewCell = self.Cell(self, *args, **kwargs)
         self._cells.append(NewCell)
 
         self._find_max_row_col()
@@ -1867,9 +1910,6 @@ class ScrollingTable():
 
             if cell._row > self._max_row:
                 self._max_row = cell._row
-
-    def _cell_callback(self, cell):
-        print('ScrollingTable._cell_callback(\nself={},\ncell={},\n)'.format(self, cell))
 
     def scroll_up(self):
         print('ScrollingTable.scroll_up(self={})'.format(self))
@@ -1910,11 +1950,12 @@ class ScrollingTable():
         for cell in self._cells:
             row_index = cell._row + self._current_row_offset
             if ScrollingTable_debug:
-                print('cell=', cell)
-                print('cell._row=', cell._row)
-                print('self._current_row_offset=', self._current_row_offset)
-                print('row_index=', row_index)
-                print('self._data_rows=', self._data_rows)
+                #print('cell=', cell)
+                #print('cell._row=', cell._row)
+                #print('self._current_row_offset=', self._current_row_offset)
+                #print('row_index=', row_index)
+                #print('self._data_rows=', self._data_rows)
+                pass
 
             #Is there data for this cell to display?
             if row_index <= len(self._data_rows) -1:
@@ -1925,14 +1966,18 @@ class ScrollingTable():
                 if ScrollingTable_debug: print('row_dict=', row_dict)
 
                 col_header_index = cell._col + self._current_col_offset
+                if col_header_index >= len(self._table_header_order):
+                    #There is a cell button that does not header associated.
+                    cell.SetText('')
+                    continue
                 #col_header_index is int() base 0 (left most col is 0)
-                if ScrollingTable_debug: print('col_header_index=', col_header_index)
+                #if ScrollingTable_debug: print('col_header_index=', col_header_index)
 
-                if ScrollingTable_debug: print('self._table_header_order=', self._table_header_order)
+                #if ScrollingTable_debug: print('self._table_header_order=', self._table_header_order)
                 col_header = self._table_header_order[col_header_index]
-                if ScrollingTable_debug: print('col_header=', col_header)
+                #if ScrollingTable_debug: print('col_header=', col_header)
 
-                if ScrollingTable_debug: print('row_dict=', row_dict)
+                #if ScrollingTable_debug: print('row_dict=', row_dict)
 
                 if col_header in row_dict:
                     cell_data = row_dict[col_header] #cell_data holds data for this cell
@@ -1940,7 +1985,7 @@ class ScrollingTable():
                     #There is no data for this column header
                     cell_data = ''
 
-                if ScrollingTable_debug: print('cell_data=', cell_data)
+                #if ScrollingTable_debug: print('cell_data=', cell_data)
 
                 cell.SetText(str(cell_data))
             else:
@@ -2006,11 +2051,12 @@ class ScrollingTable():
 
         for this_value in all_values:
             for row in temp_rows:
-                index = temp_rows.index(row)
+                index = old_rows.index(row)
                 if col_header in row:
                     if row[col_header] == this_value:
                         move_row = old_rows.pop(index)
                         new_rows.append(move_row)
+
 
             #reset temp_rows
             temp_rows = copy.copy(old_rows)
@@ -2126,14 +2172,18 @@ class UserInputClass:
             SpaceBarID=None, #int()
             ShiftID=None, #int()
             FeedbackObject=None, #object with .SetText() method
+            kb_btn_message=None,
             ):
 
         self._kb_popup_name = kb_popup_name
+        self._kb_btn_message = kb_btn_message
 
         @event(kb_btn_submit, 'Released')
         def kb_btn_submitEvent(button, state):
             string = self._kb_Keyboard.GetString()
             print('kb_btn_submitEvent\n button.ID={}\n state={}\n string={}'.format(button.ID, state, string))
+
+            self._TLP.HidePopup(self._kb_popup_name)
 
             if self._kb_callback:
                 if self._kb_passthru:
@@ -2144,7 +2194,6 @@ class UserInputClass:
             if self._kb_feedback_btn:
                 self._kb_feedback_btn.SetText(string)
 
-            self._TLP.HidePopup(self._kb_popup_name)
 
         if kb_btn_cancel:
             @event(kb_btn_cancel, 'Released')
@@ -2168,10 +2217,20 @@ class UserInputClass:
             password_mode=False,
             text_feedback=None, #button()
             passthru=None, #any object that you want to also come thru the callback
+            message=None,
             ):
 
         if kb_popup_name:
             self._kb_popup_name = kb_popup_name
+
+        if message:
+            if self._kb_btn_message:
+                self._kb_btn_message.SetText(message)
+        else:
+            if self._kb_btn_message:
+                self._kb_btn_message.SetText('Please enter your text.')
+
+        self._kb_Keyboard.set_password_mode(password_mode)
 
         if text_feedback:
             self._kb_text_feedback = text_feedback #button to show text as it is typed
@@ -2184,5 +2243,12 @@ class UserInputClass:
         self._kb_Keyboard.ClearString()
 
         self._TLP.ShowPopup(self._kb_popup_name)
+
+#Hash function *****************************************************************
+def hash_it(string=''):
+  '''This method takes in a string and returns a SHA512 hash of that string'''
+  arbitrary_string = 'gs_tools_arbitrary_string'
+  string += arbitrary_string
+  return  hashlib.sha512(bytes(string,'utf-8')).hexdigest()
 
 print('End  GST')

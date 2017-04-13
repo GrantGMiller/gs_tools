@@ -2250,6 +2250,90 @@ class UserInputClass:
 
         self._TLP.ShowPopup(self._kb_popup_name)
 
+    def setup_boolean(self,
+            bool_popup_name, #str()
+
+            bool_btn_true, #Button()
+            bool_btn_false, #Button()
+            bool_btn_cancel=None, #Button()
+
+            bool_btn_message=None,
+            ):
+        self._bool_callback = None
+        self._bool_true_text = 'Yes'
+        self._bool_false_text = 'No'
+
+        self._bool_popup_name = bool_popup_name
+
+        self._bool_btn_true = bool_btn_true
+        self._bool_btn_false = bool_btn_false
+        self._bool_btn_cancel = bool_btn_cancel
+
+        self._bool_btn_message = bool_btn_message
+
+        @event(self._bool_btn_true, 'Released')
+        @event(self._bool_btn_false, 'Released')
+        def _bool_btn_event(button, state):
+            if button == self._bool_btn_true:
+                if self._bool_callback:
+                    if self._bool_passthru:
+                        self._bool_callback(self, True, self._bool_passthru)
+                    else:
+                        self._bool_callback(self, True)
+
+                    if self._bool_feedback_btn:
+                        self._bool_feedback_btn.SetText(self._bool_true_text)
+
+            elif button == self._bool_btn_false:
+                if self._bool_callback:
+                    if self._bool_passthru:
+                        self._bool_callback(self, False, self._bool_passthru)
+                    else:
+                        self._bool_callback(self, False)
+
+                    if self._bool_feedback_btn:
+                        self._bool_feedback_btn.SetText(self._bool_false_text)
+
+            button.Host.HidePopup(self._bool_popup_name)
+
+        if self._bool_btn_cancel:
+            @event(self._bool_btn_cancel, 'Released')
+            def _bool_btn_cancelEvent(button, state):
+                _bool_btn_event(button, state)
+
+    def get_boolean(self,
+            callback=None, #function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            passthru=None, #any object that you want to also come thru the callback
+            message=None,
+            true_text=None,
+            false_text=None,
+            ):
+        self._bool_callback = callback
+        self._bool_passthru = passthru
+        self._bool_true_text = true_text
+        self._bool_false_text = false_text
+        self._bool_feedback_btn = feedback_btn
+
+        if message:
+            self._bool_btn_message.SetText(message)
+        else:
+            self._bool_btn_message.SetText('Are you sure?')
+
+        if true_text:
+            self._bool_btn_true.SetText(true_text)
+        else:
+            self._bool_btn_true.SetText('Yes')
+
+        if false_text:
+            self._bool_btn_false.SetText(false_text)
+        else:
+            self._bool_btn_false.SetText('No')
+
+
+
+
+
 #Hash function *****************************************************************
 def hash_it(string=''):
   '''This method takes in a string and returns a SHA512 hash of that string'''

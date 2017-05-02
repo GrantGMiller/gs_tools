@@ -58,10 +58,10 @@ class Button(extronlib.ui.Button):
             setattr(self, 'Last' + EventName, None)
 
 
-        if PressFeedback == 'State':
-            self.AutoStateChange('Pressed', 1)
-            self.AutoStateChange('Tapped', 0)
-            self.AutoStateChange('Released', 0)
+        #if PressFeedback == 'State':
+            #self.AutoStateChange('Pressed', 1)
+            #self.AutoStateChange('Tapped', 0)
+            #self.AutoStateChange('Released', 0)
 
         self.Text = ''
         self.ToggleStateList = None
@@ -217,12 +217,12 @@ class Button(extronlib.ui.Button):
             self.ToggleStateList = None
 
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Knob(extronlib.ui.Knob):
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Label(extronlib.ui.Label):
@@ -241,12 +241,12 @@ class Label(extronlib.ui.Label):
         self.SetText(self.Text[:-1])
 
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Level(extronlib.ui.Level):
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(type(self), self.Host.DeviceAlias, self.ID)
+        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 # extronlib.system **************************************************************
@@ -281,7 +281,22 @@ class DigitalIOInterface(extronlib.interface.DigitalIOInterface):
 
 class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
     def __str__(self):
-        return '{}, IPAddress={}, IPPort={}'.format(type(self), self.IPAddress, self.IPPort)
+        return '{}, IPAddress={}, IPPort={}'.format(super().__str__(), self.IPAddress, self.IPPort)
+
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        for item in ['Credentials',
+                     'Hostname',
+                     'IPAddress',
+                     'IPPort',
+                     'Protocol',
+                     'ServicePort',
+                     ]:
+            yield item, getattr(self, item)
+
+        yield 'Type', str(type(self))
 
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
@@ -294,44 +309,71 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
     '''
     _all_servers_ex = {  # int(port_number): EthernetServerInterfaceExObject,
     }
-    _ports_in_use = []
-
+    _ports_in_use = []  # list of ints representing ports that are in use
 
     def __new__(cls, *args, **kwargs):
+        print('EthernetServerInterfaceEx.__new__(args={}, kwargs={})'.format(args, kwargs))
+
         if len(args) > 0:
             port = args[0]
+        else:
+            port = kwargs.get('IPPort')
+
+        if port is not None:
             if port in cls._ports_in_use:
-                ProgramLog('EthernetServerInterfaceEx IPPort {} is already in use.\nIf you really want to instantiate another object on this same port, you can first call EthernetServerInterfaceEx.clear_port_in_use({})'.format(port, port), 'error')
+                ProgramLog(
+                    'EthernetServerInterfaceEx IPPort {} is already in use.\nIf you really want to instantiate another object on this same port, you can first call EthernetServerInterfaceEx.clear_port_in_use({})'.format(
+                        port, port), 'error')
                 raise Exception('EthernetServerInterfaceEx IPPort {} is already in use.'.format(port))
             else:
+                # port is not in use. either because the programmer hasnt instantiated one yet, or he called "clear_port_in_use"
                 if port in cls._all_servers_ex:
-                    print('EthernetServerInterfaceEx.__new__\n This server already exist. return old server for port {}'.format(port))
-                    ProgramLog('This EthernetServerInterfaceEx is already in use.\n New events will now override old events.\n This may not be the expected behavior.\n Consider choosing a different port.', 'warning')
+                    print(
+                        'EthernetServerInterfaceEx.__new__\n This server already exist. return old server for port {}\n old_server={}'.format(
+                            port, cls._all_servers_ex[port]))
+                    ProgramLog(
+                        'This EthernetServerInterfaceEx is already in use.\n New events will now override old events.\n This may not be the expected behavior.\n Consider choosing a different port.',
+                        'warning')
                     return cls._all_servers_ex[port]
                 else:
                     print('EthernetServerInterfaceEx.__new__\n Creating new EthernetServerInterfaceEx')
                     return super().__new__(cls)
+        else:
+            print('Error in EthernetServerInterfaceEx.__new__\n port={}'.format(port))
 
     def __init__(self, *args, **kwargs):
         print('EthernetServerInterfaceEx.__init__\n, args={}\n kwargs={}'.format(args, kwargs))
-        if self not in self._ports_in_use:
+
+        if len(args) > 0:
+            port = args[0]
+        else:
+            port = kwargs.get('IPPort')
+
+        if self not in self._all_servers_ex.values():
+            print('This interface has never been init before. init for the first time')
             print('super(EthernetServerInterfaceEx).__init__')
             self._listen_state = None
 
-            if len(args) > 0:
-                port = args[0]
-                self._all_servers_ex[port] = self
+            self._all_servers_ex[port] = self
 
-                if port not in self._ports_in_use:
-                    self._ports_in_use.append(port)
+            if port not in self._ports_in_use:
+                self._ports_in_use.append(port)
 
             super().__init__(*args, **kwargs)
 
+        else:
+            print('EthernetServerInterfaceEx.__init__\n This interface has been instantiated before. do nothing')
+            pass
+
+        print('EthernetServerInterfaceEx.__init__ complete')
+
     def StartListen(self):
-        print('EthernetServerInterfaceEx.StartListen\n self={}\n self._listen_state={}'.format(self, self._listen_state))
+        print('EthernetServerInterfaceEx.StartListen() before={}'.format(self._listen_state))
         if self._listen_state is not 'Listening':
             self._listen_state = super().StartListen()
 
+        print(
+            'EthernetServerInterfaceEx.StartListen\n self={}\n self._listen_state={}'.format(self, self._listen_state))
         return self._listen_state
 
     @classmethod
@@ -351,6 +393,19 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
 
     def __str__(self):
         return '{}, IPPort={}'.format(super().__str__(), self.IPPort)
+
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        for item in ['IPPort',
+                     'Interface',
+                     'MaxClients',
+                     'Protocol',
+                     ]:
+            yield item, getattr(self, item)
+
+        yield 'Type', str(type(self))
 
 
 class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
@@ -377,66 +432,51 @@ class SerialInterface(extronlib.interface.SerialInterface):
         The return value of __new__() should be the new object instance (usually an instance of cls).
         '''
         print('SerialInterface.__new__(args={}, kwargs={})'.format(args, kwargs))
-        # Save the used ports as attributes in the ProcessorDevice class
-        # Determine the Host
-        Host = None
 
         if len(args) > 0:
             Host = args[0]
         else:
-            if 'Host' in kwargs:
-                Host = kwargs['Host']
+            Host = kwargs.get('Host')
 
-        # Determine the port
-        Port = None
-        if len(args) >= 2:
+        if len(args) > 1:
             Port = args[1]
         else:
-            if 'Port' in kwargs:
-                Port = kwargs['Port']
+            Port = kwargs.get('Port')
 
-        # If the port has already been instantiated, return the old instance
+        if not Host.port_in_use(Port):
+            serial_interface = ProcessorDevice._get_serial_instance(*args, **kwargs)
+            if serial_interface is not None:
+                print('An old serial_interface has been found. use it')
+                return serial_interface
 
-        # Log the new port usage
-        print('Host={},\n Port={}'.format(Host, Port))
-        if Host:
-            if Port:
-                result = ProcessorDevice.get_current_instance(Host, Port)
-                print('result=', result)
-            else:
-                result = None
+            elif serial_interface is None:
+                print('This is the first time this interface has been instantiated. call super new')
+                return super().__new__(cls)
         else:
-            result = None
+            raise Exception(
+                'This com port is already in use.\nConsider using Host.make_port_available({})'.format(Port))
 
-        # Init the super
-        if result is None:
-            # This is the first time this port has been instantiated
-            return super().__new__(cls)
-
-        elif isinstance(result, SerialInterface):
-            serial_interface = result
-            # this port has already been instantiated, result = the first instance
-            print('This port has already been instantiated. Re-initializing and returning original instance.')
-            kwargs.pop('Host', None)  # should not get passed into Initialize
-            kwargs.pop('Port', None)  # should not get passed into Initialize
-
-            serial_interface.Initialize(**kwargs)
-            return serial_interface
-        print('end __new__')
-
-    def __init__(self, Host=None, Port=None, **kwargs):
-        args = (Host, Port)
-        print('SerialInterface.__init__(args={}, kwargs={})'.format(args, kwargs))
-        ProcessorDevice.new_port_in_use(Host, Port, self)
-        if not hasattr(self, 'Host'):
-            self._isOpen = True
-            # This port has not been initialized yet
-            print('super().__init__')
-            super().__init__(Host, Port, **kwargs)
+    def __init__(self, *args, **kwargs):
+        Host = None
+        if len(args) > 0:
+            Host = args[0]
         else:
-            # This port has already been instantiated
+            Host = kwargs['Host']
+
+        Port = None
+        if len(args) > 1:
+            Port = args[1]
+        else:
+            Port = kwargs['Port']
+
+        if Port not in ProcessorDevice._serial_instances[Host.DeviceAlias].keys():
+            print('This is the first time this port has been init')
+            super().__init__(*args, **kwargs)
+        else:
+            print('This has been init before. do nothing')
             pass
-        print('end __init__')
+
+        ProcessorDevice._register_new_serial_instance(self)
 
     def Initialize(self, **kwargs):
         print('SerialInterface.Initialize(kwargs={})'.format(kwargs))
@@ -445,9 +485,27 @@ class SerialInterface(extronlib.interface.SerialInterface):
 
     def __str__(self):
         try:
-            return '{}, Host.DeviceAlias={}, Port={}'.format(type(self), self.Host.DeviceAlias, self.Port)
+            return '{}, Host.DeviceAlias={}, Port={}'.format(super().__str__(), self.Host.DeviceAlias, self.Port)
         except:
             return super().__str__()
+
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        for item in ['Baud',
+                     'CharDelay',
+                     'Data',
+                     'FlowControl',
+                     'Mode',
+                     'Parity',
+                     'Port',
+                     'Stop',
+                     ]:
+            yield item, getattr(self, item)
+
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Type', str(type(self))
 
 
 class SWPowerInterface(extronlib.interface.SWPowerInterface):
@@ -460,67 +518,114 @@ class VolumeInterface(extronlib.interface.VolumeInterface):
 
 # extronlib.device **************************************************************
 class ProcessorDevice(extronlib.device.ProcessorDevice):
-    _used_ports = {  # ProcessorDeviceObject: ['COM1', 'IRS1', ...]
-    }  # class attributes
+    _serial_ports_in_use = {  # ProcessorDevice.DeviceAlias: ['COM1', 'COM2', ...]
+    }
 
-    _used_ports_instances = {  # ProcessorDeviceObject1: {'COM1': SerialInterfaceInstance1,
-        # 'COM2': SerialInterfaceInstance2,
+    _serial_instances = {  # ProcessorDevice.DeviceAliasA: {'COM1': SerialInterfaceObjectA1,
+        # 'COM2': SerialInterfaceObjectA2,
         # },
-        # ProcessorDeviceObject2: {'COM1': SerialInterfaceInstance3,
-        # 'COM2': SerialInterfaceInstance4,
+        # ProcessorDevice.DeviceAliasB: {'COM1': SerialInterfaceObjectB1,
+        # 'COM2': SerialInterfaceObjectB2,
         # },
     }
 
-    @classmethod
-    def new_port_in_use(cls, Host, Port, Instance):
-        print('ProcessorDevice.new_port_in_use\n Host={}\n Port={}\n Instance={}'.format(Host, Port, Instance))
-        return_value = None
-
-        # Update _used_ports
-        if Host not in cls._used_ports:
-            cls._used_ports[Host] = []
-
-        cls._used_ports[Host].append(Port)
-        print('cls._used_ports=', cls._used_ports)
-
-        # update _used_ports_instances
-        if Host not in cls._used_ports_instances:
-            cls._used_ports_instances[Host] = {}
-
-        cls._used_ports_instances[Host][Port] = Instance
+    _processor_device_instances = {  # ProcessorDevice.DeviceAlias: ProcessorDeviceObject
+    }
 
     @classmethod
-    def get_current_instance(cls, Host, Port):
-        if Host not in cls._used_ports_instances:
-            cls._used_ports_instances[Host] = {}
+    def _register_new_serial_instance(cls, instance):
+        print('ProcessorDevice._register_new_serial_instance(instance={})'.format(instance))
+        cls._serial_instances[instance.Host.DeviceAlias][instance.Port] = instance
 
-        if Port in cls._used_ports_instances[Host]:
-            return cls._used_ports_instances[Host][Port]
+        if instance.Port not in cls._serial_ports_in_use[instance.Host.DeviceAlias]:
+            cls._serial_ports_in_use[instance.Host.DeviceAlias].append(instance.Port)
+
+    @classmethod
+    def _get_serial_instance(cls, Host, Port, **kwargs):
+        print('ProcessorDevice._get_serial_instance(Host={}\n Port={}\n kwargs={}'.format(Host, Port, kwargs))
+        # return new/old serial instance
+        if Port not in cls._serial_ports_in_use[Host.DeviceAlias]:
+            print(
+                'The port is availble. Either becuase it has never been instantiated or cuz the programmer called "_make_port_available"')
+
+            if Port in cls._serial_instances[Host.DeviceAlias].keys():
+                print('A SerialInterface already exist. Re-initialize it and return the old serial_interface')
+                serial_interface = cls._serial_instances[Host.DeviceAlias][Port]
+                serial_interface.Initialize(**kwargs)
+                print('serial_interface=', serial_interface)
+                return serial_interface
+            else:
+                print('This SerialInterface has NOT been instantiated before. return None')
+                return None
         else:
-            return None
+            print('This port is not available')
+            raise Exception(
+                'This port is not available.\n Consider calling ProcessorDevice._make_port_available(Host, Port)')
+
+    @classmethod
+    def _make_port_available(cls, Host, Port):
+        print('ProcessorDevice._make_port_available(Host={}\n Port={}'.format(Host, Port))
+        # return None
+        if Port in cls._serial_ports_in_use[Host.DeviceAlias]:
+            print('The port has already been instantiated. but make it available again')
+            cls._serial_ports_in_use[Host.DeviceAlias].remove(Port)
+        else:
+            print('The port has never been instantiated. do nothing.')
+            pass
+
+    def __new__(cls, *args, **kwargs):
+        '''
+        If the programmer instantiates the same processor twice, the instantiation will return the same object instead of creating a new object
+        '''
+        print('ProcessorDevice.__new__(args={}, kwargs={})'.format(args, kwargs))
+
+        device_alias = args[0]
+
+        if device_alias not in cls._serial_ports_in_use:
+            cls._serial_ports_in_use[device_alias] = []
+
+        if device_alias not in cls._serial_instances:
+            cls._serial_instances[device_alias] = {}
+
+        if device_alias not in cls._processor_device_instances:
+            # no processor with this device_alias has ever been instantiated. super().__new__
+            return super().__new__(cls)
+        else:
+            old_proc = cls._processor_device_instances[device_alias]
+            return old_proc
 
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._used_ports[self] = []
+        print('ProcessorDevice.__init__\n self={}\n args={}, kwargs={}'.format(self, args, kwargs))
+
+        device_alias = args[0]
+        if device_alias not in self._processor_device_instances:
+            # this is the first time .__init__ has been called on this processor
+            super().__init__(*args, **kwargs)
+            self._processor_device_instances[device_alias] = self
+        else:
+            # this processor has been init before. do nothing
+            pass
 
     def port_in_use(self, port_str):
-        print('ProcessorDevice.port_in_use\n self={}\n port_str={}'.format(self, port_str))
-        print('self._used_ports=', self._used_ports)
-        port_list = self._used_ports[self]
-        print('port_list=', port_list)
-        print('port_str in port_list=', port_str in port_list)
-        if port_str in port_list:
+        print('ProcessorDevice.port_in_use\n self={}\n port_str={}\n\n self._serial_ports_in_use={}'.format(self,
+                                                                                                            port_str,
+                                                                                                            self._serial_ports_in_use))
+
+        if port_str in self._serial_ports_in_use[self.DeviceAlias]:
             return True
         else:
             return False
 
-    def clear_port_in_use(self, port_str):
-        print('ProcessorDevice.clear_port_in_use({})'.format(port_str))
-        if port_str in self._used_ports[self]:
-            self._used_ports[self].remove(port_str)
-        print(
-            'ProcessorDevice.clear_port_in_use({})\nERROR: {} not in ProcessorDevice.clear_port_in_use'.format(port_str,
-                                                                                                               port_str))
+    def make_port_available(self, port_str):
+        print('ProcessorDevice.clear_port_in_use\n self={}\n port_str={}'.format(self, port_str))
+        self._make_port_available(self.Host, self.Port)
+
+    def __str__(self):
+        try:
+            return 'self={}, self.DeviceAlias={}, self.IPAddress={}'.format(super().__str__(), self.DeviceAlias,
+                                                                            self.IPAddress)
+        except:
+            return super().__str__()
 
 
 class UIDevice(extronlib.device.UIDevice):
@@ -797,7 +902,7 @@ def isConnected(interface):
     '''
     if interface in ConnectionStatus:
         c = ConnectionStatus[interface]
-        if c == 'Connected':
+        if c in ['Connected', 'Online']:
             return True
         else:
             return False
@@ -807,11 +912,11 @@ def isConnected(interface):
 
 # Connection Handler ***************************************************************
 # Globals
-if not File.Exists('connection.log'):
-    file = File('connection.log', mode='wt')
+if not File.Exists('connection_handler.log'):
+    file = File('connection_handler.log', mode='wt')
     file.close()
 
-with File('connection.log', mode='at') as file:
+with File('connection_handler.log', mode='at') as file:
     file.write('\n{} - Processor Restarted\n\n'.format(time.asctime()))
 
 ConnectionStatus = {}
@@ -830,7 +935,12 @@ def _NewStatus(interface, state, Type='Unknown'):
     if state != oldStatus:
         # New status
         ConnectionStatus[interface] = state
-        with File('connection.log', mode='at') as file:
+
+        if interface in user_physical_connection_callbacks:
+            callback = user_physical_connection_callbacks[interface]
+            callback(interface, state)
+
+        with File('connection_handler.log', mode='at') as file:
 
             if isinstance(interface, EthernetClientInterface):
                 ip = interface.IPAddress
@@ -899,11 +1009,20 @@ _server_timeout_counters = {  # TODO - implement into HandleConnection
 }
 
 
+def RemoveConnectionHandlers(interface):
+    print('RemoveConnectionHandlers\n interface={}'.format(interface))
+    interface.Connected = None
+    interface.Disconnected = None
+    if interface in ConnectionStatus:
+        ConnectionStatus.pop(interface)
+    print('ConnectionStatus=', ConnectionStatus)
+
+
 def HandleConnection(interface, serverLimit=None):
     '''
     This will attempt to maintain the connection to the interface.
      The programmer can call isConnected(interface) to find if this interface is connected.
-     Also the connection status will be logged to a file 'connection.log' on the processor.
+     Also the connection status will be logged to a file 'connection_handler.log' on the processor.
     :param interface: extronlib.interface.* or extronlib.device.*
     :param serverLimit: str(), None or 'One connection per IP'
     :return:
@@ -919,12 +1038,6 @@ def HandleConnection(interface, serverLimit=None):
     # Physical connection status
     def _PhysicalConnectionHandler(interface, state):
         # TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
-        # If there is a user callback, do the callback
-
-
-        if interface in user_physical_connection_callbacks:
-            callback = user_physical_connection_callbacks[interface]
-            callback(interface, state)
 
         # Reset the send-counter if applicable
         if interface in _connection_send_counter:
@@ -961,6 +1074,7 @@ def HandleConnection(interface, serverLimit=None):
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
                     if interface in ConnectionStatus:
+                        print('_PhysicalConnectionHandler Disconnected WaitReconnect.Restart()')
                         WaitReconnect.Restart()
 
         # Handle the Connected/Online event
@@ -970,7 +1084,9 @@ def HandleConnection(interface, serverLimit=None):
 
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    WaitReconnect.Cancel()
+                    if interface in ConnectionStatus:
+                        print('_PhysicalConnectionHandler Connected WaitReconnect.Restart()')
+                        WaitReconnect.Cancel()
 
         # If the status has changed from Connected to Disconnected or vice versa, log the change
         if ConnectionStatus[interface] != state:
@@ -1004,6 +1120,7 @@ def HandleConnection(interface, serverLimit=None):
             print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface, value))
 
             _NewStatus(interface, value, 'Logically')
+
             if value == 'Disconnected':
                 if isinstance(interface, extronlib.interface.EthernetClientInterface):
                     interface.Disconnect()
@@ -1022,7 +1139,8 @@ def HandleConnection(interface, serverLimit=None):
 
     # Start the connection
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
-        Wait(0.1, interface.Connect)
+        if interface.Protocol == 'TCP':
+            Wait(0.1, interface.Connect)
     elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
         interface.StartListen()
 
@@ -1560,7 +1678,7 @@ def toPercent(Value, Min=0, Max=100):
         return Percent
     except Exception as e:
         print(e)
-        ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'Error')
+        #ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'error')
         return 0
 
 
@@ -1586,6 +1704,7 @@ def IncrementIP(IP):
                     Oct1 = 0
 
     return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
+
 
 def is_valid_ipv4(ip):
     """Validates IPv4 addresses.
@@ -1658,7 +1777,7 @@ class Keyboard():
 
         self.string = ''
 
-        self.CapsLock = False
+        self.CapsLock = True  # default caps lock setting at boot-up
         self.ShiftMode = 'Upper'
         self._password_mode = False
 
@@ -1687,7 +1806,7 @@ class Keyboard():
             if state in ['Pressed', 'Repeated']:
                 self.deleteCharacter()
 
-            # Spacebar
+                # Spacebar
 
         if SpaceBarID is not None:
             @event(extronlib.ui.Button(TLP, SpaceBarID), 'Pressed')
@@ -1855,7 +1974,6 @@ class Keyboard():
             if not self.bClear.Visible:
                 self.bClear.SetVisible(True)
 
-
     def SetFeedbackObject(self, NewFeedbackObject):
         '''
         Changes the ID of the object to receive feedback.
@@ -1900,7 +2018,8 @@ class ScrollingTable():
             OldHandler = self._btn.Released
 
             def NewHandler(button, state):
-                print('Cell NewHandler(\n button={}\n state={}'.format(button, state))
+                if ScrollingTable_debug and debug: print(
+                    'Cell NewHandler(\n button={}\n state={}'.format(button, state))
                 if OldHandler:
                     OldHandler(button, state)
                 if self._callback:
@@ -1931,16 +2050,18 @@ class ScrollingTable():
 
     # class ********************************************************************
     def __init__(self):
+
         self._header_btns = []
         self._cells = []
         self._data_rows = []  # list of dicts. each list element is a row of data. represents the full spreadsheet.
         self._current_row_offset = 0  # indicates the data row in the top left corner
         self._current_col_offset = 0  # indicates the data col in the top left corner
-        self._max_row = 0
-        self._max_col = 0
+        self._max_row = 0  # height of ui table. 0 = no ui table, 1 = single row ui table, etc...
+        self._max_col = 0  # width of ui table. 0 = no ui table, 1 = single column ui table, etc
         self._table_header_order = []
 
         self._cell_pressed_callback = None
+        self._scroll_level = None
 
         # _cell_pressed_callback should accept 2 params; the scrolling table object, and the cell object
 
@@ -1949,9 +2070,10 @@ class ScrollingTable():
                 self._update_table()
             except Exception as e:
                 # need this try/except because current Wait class only shows generic "Wait error" message
-                print('Exception in self._update_table()\n', e)
+                if ScrollingTable_debug and debug: print('Exception in self._update_table()\n', e)
 
-        self._refresh_Wait = Wait(0.1, UpdateTable)
+        self._refresh_Wait = Wait(0.2,
+                                  UpdateTable)  # This controls how often the table UI gets updated. 0.2 seconds means the TLP has a  max refresh of 5 times per second.
         self._refresh_Wait.Cancel()
 
     @property
@@ -1960,6 +2082,7 @@ class ScrollingTable():
 
     @CellPressed.setter
     def CellPressed(self, func):
+        #func should accept two params the ScrollingTable object and the Cell object
         self._cell_pressed_callback = func
         for cell in self._cells:
             cell._callback = func
@@ -2017,7 +2140,7 @@ class ScrollingTable():
         '''example:
         ScrollingTable.register_data_row({'key1':'value1', 'key2':'value2', ...})
         '''
-        print('ScrollingTable.add_new_row_data(row_dict={})'.format(row_dict))
+        if ScrollingTable_debug and debug: print('ScrollingTable.add_new_row_data(row_dict={})'.format(row_dict))
         self._data_rows.append(row_dict)
 
         for key in row_dict:
@@ -2027,7 +2150,7 @@ class ScrollingTable():
         self._refresh_Wait.Restart()
 
     def clear_all_data(self):
-        print('ScrollingTable.clear_all_data()')
+        if ScrollingTable_debug and debug: print('ScrollingTable.clear_all_data()')
         self._data_rows = []
         self.reset_scroll()
         self._update_table()
@@ -2038,7 +2161,8 @@ class ScrollingTable():
         replace/append the key/value pairs in that row with the key/values from replace_dict
 
         '''
-        print('ScrollingTable.update_row_data(where_dict={}, replace_dict={})'.format(where_dict, replace_dict))
+        if ScrollingTable_debug and debug: print(
+            'ScrollingTable.update_row_data(where_dict={}, replace_dict={})'.format(where_dict, replace_dict))
         # Check the data for a row that containts the key/value pair from where_dict
 
         if len(self._data_rows) == 0:
@@ -2064,13 +2188,13 @@ class ScrollingTable():
         self._refresh_Wait.Restart()
 
     def has_row(self, where_dict):
-        print('ScrollingTable.has_row(where_dict={})'.format(where_dict))
-        if ScrollingTable_debug:
-            print('self._data_rows=', self._data_rows)
+        if ScrollingTable_debug and debug: print('ScrollingTable.has_row(where_dict={})'.format(where_dict))
+        if ScrollingTable_debug and debug:
+            if ScrollingTable_debug and debug: print('self._data_rows=', self._data_rows)
         # Check the data for a row that containts the key/value pair from where_dict
 
         if len(self._data_rows) == 0:
-            print('ScrollingTable.has_row return False')
+            if ScrollingTable_debug and debug: print('ScrollingTable.has_row return False')
             return False
 
         for row in self._data_rows:
@@ -2086,10 +2210,10 @@ class ScrollingTable():
                     break
 
             if all_keys_match:
-                print('ScrollingTable.has_row return True')
+                if ScrollingTable_debug and debug: print('ScrollingTable.has_row return True')
                 return True
 
-        print('ScrollingTable.has_row return False')
+        if ScrollingTable_debug and debug: print('ScrollingTable.has_row return False')
         return False
 
     def delete_row(self, where_dict):
@@ -2110,8 +2234,10 @@ class ScrollingTable():
 
                 if all_keys_match:
                     # all keys match in this row. remove it
-                    print('ScrollingTable.delete_row\nremoving row={}'.format(row))
+                    if ScrollingTable_debug and debug: print('ScrollingTable.delete_row\nremoving row={}'.format(row))
                     self._data_rows.remove(row)
+
+        self._update_table()
 
     def register_cell(self, *args, **kwargs):
         NewCell = self.Cell(self, *args, **kwargs)
@@ -2124,13 +2250,14 @@ class ScrollingTable():
     def _find_max_row_col(self):
         for cell in self._cells:
             if cell._col > self._max_col:
-                self._max_col = cell._col
+                self._max_col = cell._col + 1  # self._max_col is width of ui table(not 0 base)
 
             if cell._row > self._max_row:
-                self._max_row = cell._row
+                self._max_row = cell._row + 1  # self._max_row is height of ui table(not 0 base)
 
     def scroll_up(self):
-        print('ScrollingTable.scroll_up(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('ScrollingTable.scroll_up(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('self._current_row_offset=', self._current_row_offset)
         self._current_row_offset -= 1
         if self._current_row_offset < 0:
             self._current_row_offset = 0
@@ -2138,15 +2265,24 @@ class ScrollingTable():
         self._update_table()
 
     def scroll_down(self):
-        print('ScrollingTable.scroll_down(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('ScrollingTable.scroll_down(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('self._current_row_offset=', self._current_row_offset)
+        if ScrollingTable_debug and debug: print('self._max_row=', self._max_row)
+        if ScrollingTable_debug and debug: print('len(self._data_rows)=', len(self._data_rows))
+
+        max_offset = len(self._data_rows) - self._max_row
+        if max_offset < 0:
+            max_offset = 0
+        if ScrollingTable_debug and debug: print('max_offset=', max_offset)
+
         self._current_row_offset += 1
-        if self._current_row_offset > self._max_row:
-            self._current_row_offset = self._max_row
+        if self._current_row_offset > max_offset:
+            self._current_row_offset = max_offset
 
         self._update_table()
 
     def scroll_left(self):
-        print('ScrollingTable.scroll_left(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('ScrollingTable.scroll_left(self={})'.format(self))
         self._current_col_offset -= 1
         if self._current_col_offset < 0:
             self._current_col_offset = 0
@@ -2154,25 +2290,31 @@ class ScrollingTable():
         self._update_table()
 
     def scroll_right(self):
-        print('ScrollingTable.scroll_right(self={})'.format(self))
+        if ScrollingTable_debug and debug: print('ScrollingTable.scroll_right(self={})'.format(self))
+
+        max_offset = len(self._table_header_order) - self._max_col
+        if max_offset < 0:
+            max_offset = 0
+
         self._current_col_offset += 1
-        if self._current_col_offset > self._max_col:
-            self._current_col_offset = self._max_col
+        if self._current_col_offset > max_offset:
+            self._current_col_offset = max_offset
 
         self._update_table()
 
     def _update_table(self):
-        print('_update_table()')
+        if ScrollingTable_debug and debug: print('ScrollingTable._update_table()')
 
         # iterate over all the cell objects
         for cell in self._cells:
             row_index = cell._row + self._current_row_offset
-            if ScrollingTable_debug:
-                # print('cell=', cell)
-                # print('cell._row=', cell._row)
-                # print('self._current_row_offset=', self._current_row_offset)
-                # print('row_index=', row_index)
-                # print('self._data_rows=', self._data_rows)
+            if ScrollingTable_debug and debug:
+                print('cell=', cell)
+                print('cell._row=', cell._row)
+                print('self._current_row_offset=', self._current_row_offset)
+                print('row_index=', row_index)
+                print('self._data_rows=', self._data_rows)
+                print('len(self._data_rows)=', len(self._data_rows))
                 pass
 
             # Is there data for this cell to display?
@@ -2181,7 +2323,7 @@ class ScrollingTable():
 
                 row_dict = self._data_rows[row_index]
                 # row_dict holds the data for this row
-                if ScrollingTable_debug: print('row_dict=', row_dict)
+                if ScrollingTable_debug and debug: print('row_dict=', row_dict)
 
                 col_header_index = cell._col + self._current_col_offset
                 if col_header_index >= len(self._table_header_order):
@@ -2189,13 +2331,13 @@ class ScrollingTable():
                     cell.SetText('')
                     continue
                 # col_header_index is int() base 0 (left most col is 0)
-                # if ScrollingTable_debug: print('col_header_index=', col_header_index)
+                # if ScrollingTable_debug and debug: print('col_header_index=', col_header_index)
 
-                # if ScrollingTable_debug: print('self._table_header_order=', self._table_header_order)
+                # if ScrollingTable_debug and debug: print('self._table_header_order=', self._table_header_order)
                 col_header = self._table_header_order[col_header_index]
-                # if ScrollingTable_debug: print('col_header=', col_header)
+                # if ScrollingTable_debug and debug: print('col_header=', col_header)
 
-                # if ScrollingTable_debug: print('row_dict=', row_dict)
+                # if ScrollingTable_debug and debug: print('row_dict=', row_dict)
 
                 if col_header in row_dict:
                     cell_data = row_dict[col_header]  # cell_data holds data for this cell
@@ -2203,12 +2345,18 @@ class ScrollingTable():
                     # There is no data for this column header
                     cell_data = ''
 
-                # if ScrollingTable_debug: print('cell_data=', cell_data)
+                # if ScrollingTable_debug and debug: print('cell_data=', cell_data)
 
                 cell.SetText(str(cell_data))
             else:
                 # no data for this cell
                 cell.SetText('')
+
+        # update scroll_level
+        if self._scroll_level:
+            max_row_offset = len(self._data_rows) - self._max_row
+            percent = toPercent(self._current_row_offset, 0, max_row_offset)
+            self._scroll_level.SetLevel(percent)
 
     def get_column_buttons(self, col_number):
         # returns all buttons in the column.
@@ -2242,8 +2390,8 @@ class ScrollingTable():
         self._refresh_Wait.Restart()
 
     def sort_by_column(self, col_number):
-        print('ScrollingTable sort_by_column(col_number={})'.format(col_number))
-        print('self._data_rows=', self._data_rows)
+        if ScrollingTable_debug and debug: print('ScrollingTable sort_by_column(col_number={})'.format(col_number))
+        if ScrollingTable_debug and debug: print('self._data_rows=', self._data_rows)
         all_values = []
 
         col_header = self._table_header_order[col_number]
@@ -2253,7 +2401,10 @@ class ScrollingTable():
                 all_values.append(row[col_header])
 
         # We now have all the row values in all_values
-        all_values.sort()  # Sort them
+        try:
+            all_values.sort()  # Sort them
+        except exception as e:
+            print('ScrollingTable.sort_by_column ERROR\n {}'.format(e))
 
         # We now have all the values sorted, but there may be duplicats
         all_values_no_dup = []
@@ -2284,9 +2435,13 @@ class ScrollingTable():
 
         # old_rows contains any leftovers, move them to new_rows
         new_rows.extend(old_rows)
-        print('sorted new_rows=', new_rows)
+        if ScrollingTable_debug and debug: print('sorted new_rows=', new_rows)
         self._data_rows = new_rows
         self._refresh_Wait.Restart()
+
+    def register_scroll_level(self, level):
+        # level = extronlib.ui.Level
+        self._scroll_level = level
 
 
 # UserInput *********************************************************************
@@ -2322,11 +2477,10 @@ class UserInputClass:
                 print('button=', button)
                 print('button.Text=', button.Text)
 
-                #If a button with no text is selected. Do nothing.
+                # If a button with no text is selected. Do nothing.
                 if button.Text == '':
                     print('button.Text == ''\nPlease select a button with text')
                     return
-
 
                 if self._list_callback:
                     if self._list_passthru is not None:
@@ -2372,6 +2526,7 @@ class UserInputClass:
                  feedback_btn=None,
                  passthru=None,  # any object that you want to pass thru to the callback
                  message=None,
+                 sort=False,
                  ):
         self._list_callback = callback
         self._list_feedback_btn = feedback_btn
@@ -2379,6 +2534,14 @@ class UserInputClass:
 
         # Update the table with new data
         self._list_table.clear_all_data()
+
+        # try to sort the options
+        if sort == True:
+            try:
+                options.sort()
+            except:
+                pass
+
         for option in options:
             self._list_table.add_new_row_data({'Option': option})
 
@@ -2395,7 +2558,6 @@ class UserInputClass:
                        kb_popup_name,  # str()
                        kb_btn_submit,  # Button()
                        kb_btn_cancel=None,  # Button()
-
 
                        KeyIDs=None,  # list()
                        BackspaceID=None,  # int()
@@ -2578,7 +2740,6 @@ def hash_it(string=''):
     arbitrary_string = 'gs_tools_arbitrary_string'
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
-
 
 
 print('End  GST')

@@ -18,7 +18,7 @@ import copy
 import hashlib
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     def newPrint(*args, **kwargs):
         pass
@@ -277,6 +277,11 @@ class DigitalIOInterface(extronlib.interface.DigitalIOInterface):
 
 
 class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._keep_alive_running = False
+        self._keep_alive_Timer = None
+
     def __str__(self):
         return '{}, IPAddress={}, IPPort={}'.format(super().__str__(), self.IPAddress, self.IPPort)
 
@@ -294,6 +299,28 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             yield item, getattr(self, item)
 
         yield 'Type', str(type(self))
+
+    def StartKeepAlive(self, t, cmd):
+        #super().StartKeepAlive does not call .Send apparently so im doing it differnt
+        if self._keep_alive_running is False:
+            self._keep_alive_running = True
+
+            if self._keep_alive_Timer is None:
+                def SendCMD():
+                    self.Send(cmd)
+
+                self._keep_alive_Timer = Timer(t, SendCMD)
+
+            self._keep_alive_Timer.Start()
+
+
+    def StopKeepAlive(self):
+        if self._keep_alive_running is True:
+            self._keep_alive_running = False
+
+            if self._keep_alive_Timer is not None:
+                self._keep_alive_Timer.Stop()
+
 
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
@@ -1204,7 +1231,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         OldSendAndWait = interface.SendAndWait
 
         def NewSendAndWait(*args, **kwargs):
-            # print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
+            print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
 
             _connection_send_counter[interface] += 1
 
@@ -1215,19 +1242,6 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
             return OldSendAndWait(*args, **kwargs)
 
         interface.SendAndWait = NewSendAndWait
-
-        ##Make new Rx handler - took this out because it was being overwritten by @event
-        # OldRx = interface.ReceiveData
-        # def NewRx(*args, **kwargs):
-        # print('NewRx *args=', args, ', kwargs=', kwargs)
-        # SendCounter[interface] = 0
-        # if callback:
-        # callback('ConnectionStatus', 'Connected', None)
-        #
-        # OldRx(*args, **kwargs)
-        #
-        # interface.ReceiveData = NewRx
-
 
 def ConnectionHandlerLogicalReset(interface):
     '''
@@ -2760,12 +2774,16 @@ def hash_it(string=''):
 #Timer class (safer than recursive Wait objects per PD)
 class Timer:
     def __init__(self, t, func):
+        '''
+        This class calls self.func every t-seconds until Timer.Stop() is called.
+        :param t: float
+        :param func: callable (no parameters)
+        '''
         print('Timer.__init__(t={}, func={})'.format(t, func))
         self._func = func
         self._t = t
         self._run = False
 
-        self.Start()
 
     def Stop(self):
         print('Timer.Stop()')

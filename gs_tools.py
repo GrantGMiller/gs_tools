@@ -23,12 +23,9 @@ if not debug:
     def newPrint(*args, **kwargs):
         pass
 
-
     print = newPrint
 
-
 # *******************************************************************************
-
 
 # extronlib.ui *****************************************************************
 class Button(extronlib.ui.Button):
@@ -57,11 +54,11 @@ class Button(extronlib.ui.Button):
         for EventName in self.EventNames:
             setattr(self, 'Last' + EventName, None)
 
-
-        #if PressFeedback == 'State':
-            #self.AutoStateChange('Pressed', 1)
-            #self.AutoStateChange('Tapped', 0)
-            #self.AutoStateChange('Released', 0)
+        if not debug:
+            if PressFeedback == 'State':
+                self.AutoStateChange('Pressed', 1)
+                self.AutoStateChange('Tapped', 0)
+                self.AutoStateChange('Released', 0)
 
         self.Text = ''
         self.ToggleStateList = None
@@ -376,6 +373,11 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
             'EthernetServerInterfaceEx.StartListen\n self={}\n self._listen_state={}'.format(self, self._listen_state))
         return self._listen_state
 
+    def StopListen(self):
+        super().StopListen()
+        self._listen_state = 'Not Listening'
+
+
     @classmethod
     def port_in_use(cls, port_number):
         if port_number in cls._ports_in_use:
@@ -644,22 +646,34 @@ class UIDevice(extronlib.device.UIDevice):
             #               'Popup Name': WaitObject,
         }
 
+        self._exclusive_modals = []
+
     def ShowPopup(self, popup, duration=0):
-        super().ShowPopup(popup)
-        if duration is not 0:
-            if popup in self.PopupWaits:
-                self.PopupWaits[popup].Cancel()
-                self.PopupWaits[popup].Change(duration)
-                self.PopupWaits[popup].Restart()
-            else:
-                NewWait = Wait(duration, lambda: self.HidePopup(popup))
-                self.PopupWaits[popup] = NewWait
+        if popup in self._exclusive_modals:
+            for modal_name in self._exclusive_modals:
+                if modal_name != popup:
+                    self.HidePopup(modal_name)
+                else:
+                    self._DoShowPopup(modal_name)
+        else:
+            self._DoShowPopup(popup, duration)
 
-        for PopupName in self.PopupData:
-            if PopupName != popup:
-                self.PopupData[PopupName] = 'Unknown'
+    def _DoShowPopup(self, popup, duration=0):
+            super().ShowPopup(popup)
+            if duration is not 0:
+                if popup in self.PopupWaits:
+                    self.PopupWaits[popup].Cancel()
+                    self.PopupWaits[popup].Change(duration)
+                    self.PopupWaits[popup].Restart()
+                else:
+                    NewWait = Wait(duration, lambda: self.HidePopup(popup))
+                    self.PopupWaits[popup] = NewWait
 
-        self.PopupData[popup] = 'Showing'
+            for PopupName in self.PopupData:
+                if PopupName != popup:
+                    self.PopupData[PopupName] = 'Unknown'
+
+            self.PopupData[popup] = 'Showing'
 
     def HidePopup(self, popup):
         super().HidePopup(popup)
@@ -740,6 +754,9 @@ class UIDevice(extronlib.device.UIDevice):
                         ReturnBtns.append(button)
 
         return ReturnBtns
+
+    def SetExclusiveModals(self, modals):
+        self._exclusive_modals = modals
 
 
 # extronlib *********************************************************************
@@ -902,7 +919,7 @@ def isConnected(interface):
     '''
     if interface in ConnectionStatus:
         c = ConnectionStatus[interface]
-        if c in ['Connected', 'Online']:
+        if c == 'Connected':
             return True
         else:
             return False
@@ -1139,8 +1156,7 @@ def HandleConnection(interface, serverLimit=None):
 
     # Start the connection
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
-        if interface.Protocol == 'TCP':
-            Wait(0.1, interface.Connect)
+        Wait(0.1, interface.Connect)
     elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
         interface.StartListen()
 
@@ -2740,6 +2756,34 @@ def hash_it(string=''):
     arbitrary_string = 'gs_tools_arbitrary_string'
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
+
+#Timer class (safer than recursive Wait objects per PD)
+class Timer:
+    def __init__(self, t, func):
+        print('Timer.__init__(t={}, func={})'.format(t, func))
+        self._func = func
+        self._t = t
+        self._run = False
+
+        self.Start()
+
+    def Stop(self):
+        print('Timer.Stop()')
+        self._run = False
+
+    def Start(self):
+        print('Timer.Start()')
+        if self._run is False:
+            self._run = True
+
+            @Wait(0.0001)  # Start immediately
+            def loop():
+                print('entering loop()')
+                while self._run:
+                    print('in while self._run')
+                    time.sleep(self._t)
+                    self._func()
+                print('exiting loop()')
 
 
 print('End  GST')

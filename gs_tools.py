@@ -54,44 +54,33 @@ class Button(extronlib.ui.Button):
         for EventName in self.EventNames:
             setattr(self, 'Last' + EventName, None)
 
-        if not debug:
-            if PressFeedback == 'State':
-                self.AutoStateChange('Pressed', 1)
-                self.AutoStateChange('Tapped', 0)
-                self.AutoStateChange('Released', 0)
+        if PressFeedback == 'State':
+            self.AutoStateChange('Pressed', 1)
+            self.AutoStateChange('Tapped', 0)
+            self.AutoStateChange('Released', 0)
 
         self.Text = ''
         self.ToggleStateList = None
 
         self.AllButtons.append(self)
 
-    def _CheckEventHandlers(self):
-        for EventName in self.EventNames:
-            if EventName in self.StateChangeMap:
-                CurrentAtt = getattr(self, EventName)
-                LastAtt = getattr(self, 'Last' + EventName)
-                if CurrentAtt != LastAtt:
-                    # The current att has changed. Make a new handler
+        #
+        self._autostate_callbacks = {
+            'Pressed': None,
+            'Tapped': None,
+            'Held': None,
+            'Repeated': None,
+            'Released': None,
+        }
+        for event_name in self._autostate_callbacks.keys():
+            setattr(self, event_name, self._DoEvent)
 
-                    def GetNewHandler(obj, evt):
-                        # print('GetNewHandler Button ID {}, evt {}'.format(obj.ID, evt))
-                        OldHandler = getattr(obj, evt)
+    def _DoEvent(self, button, state):
+        self._DoStateChange(state)
 
-                        # print('OldHandler=', OldHandler)
+        if self._autostate_callbacks[state] is not None:
+            self._autostate_callbacks[state](button, state)
 
-                        def NewHandler(button, state):
-                            self._DoStateChange(state)
-                            if OldHandler:
-                                OldHandler(button, state)
-
-                        return NewHandler
-
-                    setattr(self, EventName, GetNewHandler(self, EventName))
-                    NewAtt = getattr(self, EventName)
-                    setattr(self, 'Last' + EventName, NewAtt)
-
-                    # print(getattr(self, EventName))
-                    # print(getattr(self, 'Last' + EventName))
 
     def RemoveStateChange(self):
         '''
@@ -112,10 +101,9 @@ class Button(extronlib.ui.Button):
         Handler = getattr(self, eventName)
         if Handler == None:
             setattr(self, eventName, lambda *args: None)
-            self._CheckEventHandlers()
 
     def _DoStateChange(self, state):
-        # print(self.ID, '_DoStateChange')
+        print(self.ID, '_DoStateChange')
         if state in self.StateChangeMap:
             # print(self.ID, 'state in self.StateChangeMap')
             NewState = self.StateChangeMap[state]
@@ -131,14 +119,12 @@ class Button(extronlib.ui.Button):
             button.Host.ShowPopup(popup, duration)
 
         self.Released = NewFunc
-        self._CheckEventHandlers()
 
     def ShowPage(self, page):
         def NewFunc(button, state):
             button.Host.ShowPage(page)
 
         self.Released = NewFunc
-        self._CheckEventHandlers()
 
     def HidePopup(self, popup):
         '''This method is used to simplify a button that just needs to hide a popup
@@ -150,7 +136,6 @@ class Button(extronlib.ui.Button):
             button.Host.HidePopup(popup)
 
         self.Released = NewFunc
-        self._CheckEventHandlers()
 
     def SetText(self, text):
         if not isinstance(text, str):
@@ -813,9 +798,10 @@ class event():
         # print('__call__(func={})'.format(func))
         for obj in self.objs:
             for eventName in self.eventNames:
-                setattr(obj, eventName, func)
-            if hasattr(obj, '_CheckEventHandlers'):
-                obj._CheckEventHandlers()
+                if hasattr(obj, '_autostate_callbacks'):
+                    obj._autostate_callbacks[eventName] = func
+                else:
+                    setattr(obj, eventName, func)
         return func
 
 

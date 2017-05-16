@@ -17,7 +17,7 @@ class DeviceClass():
         }
 
         def DoDisconnected():
-            self._WriteStatus('ConnectionStatus', 'Disconnected')
+            self._WriteStatus('_connection_status', 'Disconnected')
 
         self.WaitConnectionStatus = Wait(30, DoDisconnected)
 
@@ -64,7 +64,7 @@ class DeviceClass():
         self.Callbacks[command] = {qualifier: callback}
 
     def ReceiveData(self, data):
-        self._WriteStatus('ConnectionStatus', 'Connected')
+        self._WriteStatus('_connection_status', 'Connected')
         self.WaitConnectionStatus.Restart()
 
 

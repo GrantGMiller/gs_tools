@@ -32,7 +32,7 @@ class EthernetClass():
         self.Models = {}
 
         self.Commands = {
-            'ConnectionStatus': {'Status': {}},
+            '_connection_status': {'Status': {}},
             'UserToken': {'Status': {}},
             'MeetingToken': {'Status': {}},
 
@@ -246,11 +246,11 @@ class EthernetClass():
 
     def OnConnected(self):
         self.connectionFlag = True
-        self.WriteStatus('ConnectionStatus', 'Connected')
+        self.WriteStatus('_connection_status', 'Connected')
         self.counter = 0
 
     def OnDisconnected(self):
-        self.WriteStatus('ConnectionStatus', 'Disconnected')
+        self.WriteStatus('_connection_status', 'Disconnected')
         self.connectionFlag = False
 
     def Set(self, command, value=None, qualifier=None):

@@ -321,7 +321,17 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             if self._keep_alive_Timer is not None:
                 self._keep_alive_Timer.Stop()
 
-
+def get_parent(client_obj):
+    '''
+    This function is used to get the parent EthernetServerInterfaceEx from a ClientObject
+    :param client_obj: extronlib.interface.EthernetServerInterfaceEx.ClientObject
+    :return:
+    '''
+    for interface in EthernetServerInterfaceEx._all_servers_ex.values():
+        for client in interface.Clients:
+            if client.IPAddress == client_obj.IPAddress:
+                if client.ServicePort == client_obj.ServicePort:
+                    return interface
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
     '''
@@ -404,7 +414,6 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
         super().StopListen()
         self._listen_state = 'Not Listening'
 
-
     @classmethod
     def port_in_use(cls, port_number):
         if port_number in cls._ports_in_use:
@@ -421,11 +430,12 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
             cls._ports_in_use.remove(port_number)
 
     def __str__(self):
-        return '{}, IPPort={}'.format(super().__str__(), self.IPPort)
+        return '{}, IPPort={}'.format(super(), self.IPPort)
 
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows an interface to be cast as a dict.
+        This can be used to save data about this ServerEx so that it can be re-instantiated after a power cycle.
         '''
         for item in ['IPPort',
                      'Interface',
@@ -933,7 +943,7 @@ def AddTrace(InterfaceObject):
 
 # Connection handler ************************************************************
 
-ConnectionStatus = {}
+_connection_status = {}
 
 
 def isConnected(interface):
@@ -944,8 +954,8 @@ def isConnected(interface):
     :param interface: extronlib.interface.*
     :return: bool
     '''
-    if interface in ConnectionStatus:
-        c = ConnectionStatus[interface]
+    if interface in _connection_status:
+        c = _connection_status[interface]
         if c == 'Connected':
             return True
         else:
@@ -963,7 +973,7 @@ if not File.Exists('connection_handler.log'):
 with File('connection_handler.log', mode='at') as file:
     file.write('\n{} - Processor Restarted\n\n'.format(time.asctime()))
 
-ConnectionStatus = {}
+_connection_status = {}
 
 GREEN = 2
 RED = 1
@@ -971,51 +981,36 @@ WHITE = 0
 
 
 def _NewStatus(interface, state, Type='Unknown'):
-    if not interface in ConnectionStatus:
-        ConnectionStatus[interface] = 'Default'
+    if not interface in _connection_status:
+        _connection_status[interface] = 'Default'
 
-    oldStatus = ConnectionStatus[interface]
+    oldStatus = _connection_status[interface]
 
     if state != oldStatus:
         # New status
-        ConnectionStatus[interface] = state
+        _connection_status[interface] = state
 
         if interface in user_physical_connection_callbacks:
             callback = user_physical_connection_callbacks[interface]
             callback(interface, state)
 
         with File('connection_handler.log', mode='at') as file:
+            write_str = '{}\n    {}:{}\n'.format(time.asctime(), 'type', type(interface))
 
-            if isinstance(interface, EthernetClientInterface):
-                ip = interface.IPAddress
-                port = interface.IPPort
-                file.write('{} - {}:{} {} {}\n'.format(time.asctime(), ip, port, Type, state))
+            for att in [
+                'IPAddress',
+                'IPPort',
+                'DeviceAlias',
+                'Port',
+                'Host',
+                'ServicePort',
+            ]:
+                if hasattr(interface, att):
+                    write_str += '    {}:{}\n'.format(att, getattr(interface, att))
 
-            elif isinstance(interface, SerialInterface):
-                alias = interface.Host.DeviceAlias
-                port = interface.Port
-                file.write('{} - {}:{} {} {}\n'.format(time.asctime(), alias, port, Type, state))
+            write_str += '    {}:{}\n'.format('ConnectionStatus', state)
 
-            elif isinstance(interface, ProcessorDevice):
-                alias = interface.DeviceAlias
-                file.write('{} - ProcessorDevice:{} {} {}\n'.format(time.asctime(), alias, Type, state))
-
-            elif isinstance(interface, UIDevice):
-                alias = interface.DeviceAlias
-                file.write('{} - UIDevice:{} {} {}\n'.format(time.asctime(), alias, Type, state))
-
-            else:
-                if hasattr(interface, 'IPAddress'):
-                    file.write('{} - {} {} {}\n'.format(time.asctime(), interface.IPAddress, Type, state))
-                elif hasattr(interface, 'Port'):
-                    if hasattr(interface, 'Host'):
-                        file.write(
-                            '{} - {}:{} {} {}\n'.format(time.asctime(), interface.Host.IPAddress, interface.Port, Type,
-                                                        state))
-                    else:
-                        file.write('{} - {}:{} {} {}\n'.format(time.asctime(), interface, interface.Port, Type, state))
-                else:
-                    file.write('{} - {} {} {}\n'.format(time.asctime(), interface, Type, state))
+            file.write(write_str)
 
     if interface in StatusButtons:
         btnList = StatusButtons[interface]
@@ -1057,9 +1052,9 @@ def RemoveConnectionHandlers(interface):
     print('RemoveConnectionHandlers\n interface={}'.format(interface))
     interface.Connected = None
     interface.Disconnected = None
-    if interface in ConnectionStatus:
-        ConnectionStatus.pop(interface)
-    print('ConnectionStatus=', ConnectionStatus)
+    if interface in _connection_status:
+        _connection_status.pop(interface)
+    print('_connection_status=', _connection_status)
 
 
 def HandleConnection(interface, serverLimit=None):
@@ -1117,7 +1112,7 @@ def HandleConnection(interface, serverLimit=None):
         if state in ['Disconnected', 'Offline']:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    if interface in ConnectionStatus:
+                    if interface in _connection_status:
                         print('_PhysicalConnectionHandler Disconnected WaitReconnect.Restart()')
                         WaitReconnect.Restart()
 
@@ -1128,12 +1123,12 @@ def HandleConnection(interface, serverLimit=None):
 
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    if interface in ConnectionStatus:
+                    if interface in _connection_status:
                         print('_PhysicalConnectionHandler Connected WaitReconnect.Restart()')
                         WaitReconnect.Cancel()
 
         # If the status has changed from Connected to Disconnected or vice versa, log the change
-        if ConnectionStatus[interface] != state:
+        if _connection_status[interface] != state:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
 
@@ -1172,7 +1167,7 @@ def HandleConnection(interface, serverLimit=None):
         return _module_connection_callback
 
     if hasattr(interface, 'SubscribeStatus'):
-        interface.SubscribeStatus('ConnectionStatus', None, _GetModuleCallback(interface))
+        interface.SubscribeStatus('_connection_status', None, _GetModuleCallback(interface))
 
     else:  # Does not have attribute 'SubscribeStatus'
         if isinstance(interface, extronlib.interface.SerialInterface):
@@ -1222,7 +1217,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
 
             if callback:
                 if _connection_send_counter[interface] > limit:
-                    callback('ConnectionStatus', 'Disconnected', None)
+                    callback('_connection_status', 'Disconnected', None)
 
             OldSend(*args, **kwargs)
 
@@ -1237,7 +1232,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
 
             if callback:
                 if _connection_send_counter[interface] > limit:
-                    callback('ConnectionStatus', 'Disconnected', None)
+                    callback('_connection_status', 'Disconnected', None)
 
             return OldSendAndWait(*args, **kwargs)
 
@@ -1254,7 +1249,7 @@ def ConnectionHandlerLogicalReset(interface):
     _connection_send_counter[interface] = 0
 
     if interface in _connection_callbacks:
-        _connection_callbacks[interface]('ConnectionStatus', 'Connected', None)
+        _connection_callbacks[interface]('_connection_status', 'Connected', None)
     else:
         # ProgramLog(
         # 'interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(
@@ -1275,8 +1270,8 @@ class PollingEngine():
 
         self.Generator = self.GetNewGenerator()
 
-        self.PollLoop = Wait(1, self.__DoAQuery)
-        self.PollLoop.Cancel()
+        self.PollLoop = Timer(1, self.__DoAQuery)
+        self.PollLoop.Stop()
 
         self.Running = False
 
@@ -1346,14 +1341,14 @@ class PollingEngine():
         '''
         print('PollingEngine.Start()')
         self.Running = True
-        self.PollLoop.Restart()
+        self.PollLoop.Start()
 
     def Stop(self):
         '''
         Stop sending all queries.
         '''
         print('PollingEngine.Stop()')
-        self.PollLoop.Cancel()
+        self.PollLoop.Stop()
         self.Running = False
 
     def __DoAQuery(self):
@@ -1384,9 +1379,6 @@ class PollingEngine():
                 'PollingEngine Error:\ninterface={}\nCommand={}\nQualifier={}\nException={}'.format(Interface, Command,
                                                                                                     Qualifier, e))
 
-        # If the polling engine is running. Do another query in 1 second.
-        if self.Running:
-            self.PollLoop.Restart()
 
 
 # Feedback helpers **************************************************************
@@ -2784,7 +2776,6 @@ class Timer:
         self._t = t
         self._run = False
 
-
     def Stop(self):
         print('Timer.Stop()')
         self._run = False
@@ -2796,12 +2787,20 @@ class Timer:
 
             @Wait(0.0001)  # Start immediately
             def loop():
-                print('entering loop()')
+                #print('entering loop()')
                 while self._run:
-                    print('in while self._run')
+                    #print('in while self._run')
                     time.sleep(self._t)
                     self._func()
-                print('exiting loop()')
+                #print('exiting loop()')
+
+    def Restart(self):
+        #To easily replace a Wait object
+        self.Start()
+
+    def Cancel(self):
+        #To easily replace a Wait object
+        self.Stop()
 
 
 print('End  GST')

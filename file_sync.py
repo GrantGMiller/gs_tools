@@ -282,7 +282,7 @@ def HandleConnection(interface):
 
             return ModuleConnectionCallback
 
-        interface.SubscribeStatus('ConnectionStatus', None, GetModuleCallback(interface))
+        interface.SubscribeStatus('_connection_status', None, GetModuleCallback(interface))
 
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
         if interface.Protocol == 'TCP':  # UDP is "connection-less"

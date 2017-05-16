@@ -110,7 +110,7 @@ class DeviceClass():
         self.Models = {}
 
         self.Commands = {
-            'ConnectionStatus': {'Status': {}},
+            '_connection_status': {'Status': {}},
             'ActiveLines': {'Status': {}},
             'ActivePixels': {'Status': {}},
             'AnnotationColor': {'Parameters': ['Red', 'Green', 'Blue'], 'Status': {}},
@@ -1668,11 +1668,11 @@ class DeviceClass():
 
     def OnConnected(self):
         self.connectionFlag = True
-        self.WriteStatus('ConnectionStatus', 'Connected')
+        self.WriteStatus('_connection_status', 'Connected')
         self.counter = 0
 
     def OnDisconnected(self):
-        self.WriteStatus('ConnectionStatus', 'Disconnected')
+        self.WriteStatus('_connection_status', 'Disconnected')
         self.connectionFlag = False
 
         self.Authenticated = 'Not Needed'

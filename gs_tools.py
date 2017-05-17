@@ -313,10 +313,8 @@ def get_parent(client_obj):
     :return:
     '''
     for interface in EthernetServerInterfaceEx._all_servers_ex.values():
-        for client in interface.Clients:
-            if client.IPAddress == client_obj.IPAddress:
-                if client.ServicePort == client_obj.ServicePort:
-                    return interface
+        if client_obj in interface.Clients:
+            return interface
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
     '''
@@ -2773,12 +2771,15 @@ class Timer:
 
             @Wait(0.0001)  # Start immediately
             def loop():
-                #print('entering loop()')
-                while self._run:
-                    #print('in while self._run')
-                    time.sleep(self._t)
-                    self._func()
-                #print('exiting loop()')
+                try:
+                    #print('entering loop()')
+                    while self._run:
+                        #print('in while self._run')
+                        time.sleep(self._t)
+                        self._func()
+                    #print('exiting loop()')
+                except Exception as e:
+                    print('Error in timer func={}\n{}'.format(self._func, e))
 
     def Restart(self):
         #To easily replace a Wait object

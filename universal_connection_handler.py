@@ -2,7 +2,7 @@ import extronlib
 from extronlib.system import File, Wait
 import time
 
-debug = False  # Set to false to disable all print statements in this module
+debug = True  # Set to false to disable all print statements in this module
 if not debug:
     def _new_print(*args, **kwargs):
         pass
@@ -234,16 +234,20 @@ class UniversalConnectionHandler:
                 raise Exception(
                     'This ConnectionHandler class does not support EthernetServerInterfaceEx with Protocol="UDP".\nConsider using EthernetServerInterface with Protocol="UDP" (non-EX).')
 
-        elif isinstance(interface, extronlib.interface.EthernetClientInterface):
+        elif isinstance(interface, extronlib.interface.EthernetServerInterface):
+
             if interface.Protocol == 'TCP':
                 raise Exception(
                     'This ConnectionHandler class does not support EthernetServerInterface with Protocol="TCP".\nConsider using EthernetServerInterfaceEx with Protocol="TCP".')
             elif interface.Protocol == 'UDP':
                 #The extronlib.interface.EthernetServerInterfacee with Protocol="UDP" actually works pretty good by itself. No need to do anything special :-)
-                pass
-
-    def _maintain_server_TCP(self, interface):
-
+                while True:
+                    result = interface.StartListen()
+                    print(result)
+                    if result == 'Listening':
+                        break
+                    else:
+                        time.sleep(1)
 
     def _maintain_serverEx_TCP(self, parent):
         parent.Connected = self._get_serverEx_connection_callback(parent)
@@ -441,6 +445,10 @@ class UniversalConnectionHandler:
                     if interface.Protocol == 'UDP':
                         self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'Logical')
 
+                elif isinstance(interface, extronlib.interface.SerialInterface):
+                    self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'Logical')
+
+
                 if callable(current_rx):
                     current_rx(*args, **kwargs)
 
@@ -548,6 +556,8 @@ class UniversalConnectionHandler:
 
         self._update_serverEx_timer(parent)
 
+        self._log_connection_to_file(client, state, kind)
+
     def _check_rx_handler_serverEx(self, client):
         '''
         Every time data is recieved from the client, set the timestamp
@@ -570,6 +580,7 @@ class UniversalConnectionHandler:
                 old_rx(client, data)
 
             parent.ReceiveData = new_rx
+            self._rx_handlers[parent] = new_rx
 
     def _update_serverEx_timer(self, parent):
         '''
@@ -609,13 +620,41 @@ class UniversalConnectionHandler:
         for client in parent.Clients:
             client_timestamp = self._server_client_rx_timestamps[parent][client]
             if time.monotonic() - client_timestamp > self._connection_timeouts[parent]:
-                client.Send('Disconnecting due to inactivity for {} seconds.\r\nBye.\r\n'.format(
-                    self._connection_timeouts[parent]))
-                client.Disconnect()
+                if client in parent.Clients:
+                    client.Send('Disconnecting due to inactivity for {} seconds.\r\nBye.\r\n'.format(
+                        self._connection_timeouts[parent]))
+                    client.Disconnect()
+                self._remove_client_data(client)
 
     def _remove_client_data(self, client):
         # remove dead sockets to prevent memory leak
         self._server_client_rx_timestamps.pop(client, None)
+
+    def _log_connection_to_file(self, interface, state, kind):
+        # Write new status to a file
+        with File(self._filename, mode='at') as file:
+            write_str = '{}\n    {}:{}\n'.format(time.asctime(), 'type', type(interface))
+
+            for att in [
+                'IPAddress',
+                'IPPort',
+                'DeviceAlias',
+                'Port',
+                'Host',
+                'ServicePort',
+                'Protocol',
+            ]:
+                if hasattr(interface, att):
+                    write_str += '    {}:{}\n'.format(att, getattr(interface, att))
+
+                    if att == 'Host':
+                        write_str += '    {}:{}\n'.format('Host.DeviceAlias', getattr(interface, att).DeviceAlias)
+
+
+            write_str += '    {}:{}\n'.format('ConnectionStatus', state)
+            write_str += '    {}:{}\n'.format('Kind', kind)
+
+            file.write(write_str)
 
     def _update_connection_status_serial_or_ethernetclient(self, interface, state, kind=None):
         '''
@@ -641,24 +680,7 @@ class UniversalConnectionHandler:
             if callable(self._connected_callback):
                 self._connected_callback(interface, state)
 
-            # Write new status to a file
-            with File(self._filename, mode='at') as file:
-                write_str = '{}\n    {}:{}\n'.format(time.asctime(), 'type', type(interface))
-
-                for att in [
-                    'IPAddress',
-                    'IPPort',
-                    'DeviceAlias',
-                    'Port',
-                    'Host',
-                    'ServicePort',
-                ]:
-                    if hasattr(interface, att):
-                        write_str += '    {}:{}\n'.format(att, getattr(interface, att))
-
-                write_str += '    {}:{}\n'.format('ConnectionStatus', state)
-
-                file.write(write_str)
+            self._log_connection_to_file(interface, state, kind)
 
         # save the state for later
         self._connection_status[interface] = state
@@ -758,17 +780,26 @@ class Timer:
         if self._run is False:
             self._run = True
 
-            @Wait(0.0001)  # Start immediately
-            def loop():
-                try:
-                    # print('entering loop()')
-                    while self._run:
-                        # print('in while self._run')
-                        time.sleep(self._t)
-                        self._func()
-                        # print('exiting loop()')
-                except Exception as e:
-                    print('Error in timer func={}\n{}'.format(self._func, e))
+            try:
+                @Wait(0.0001)  # Start immediately
+                def loop():
+                    try:
+                        # print('entering loop()')
+                        while self._run:
+                            # print('in while self._run')
+                            if self._t < 0:
+                                pass
+                            else:
+                                time.sleep(self._t)
+                            self._func()
+                            # print('exiting loop()')
+                    except Exception as e:
+                        print('Error in timer func={}\n{}'.format(self._func, e))
+            except Exception as e:
+                if 'can\'t start new thread' in str(e):
+                    print('There are too many threads right now.\nWaiting for more threads to be available.')
+                time.sleep(1)
+                self.Start()
 
     def ChangeTime(self, new_t):
         '''

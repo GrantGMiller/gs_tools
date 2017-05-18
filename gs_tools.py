@@ -2769,24 +2769,48 @@ class Timer:
         if self._run is False:
             self._run = True
 
-            @Wait(0.0001)  # Start immediately
-            def loop():
-                try:
-                    #print('entering loop()')
-                    while self._run:
-                        #print('in while self._run')
-                        time.sleep(self._t)
-                        self._func()
-                    #print('exiting loop()')
-                except Exception as e:
-                    print('Error in timer func={}\n{}'.format(self._func, e))
+            try:
+                @Wait(0.0001)  # Start immediately
+                def loop():
+                    try:
+                        # print('entering loop()')
+                        while self._run:
+                            # print('in while self._run')
+                            if self._t < 0:
+                                pass
+                            else:
+                                time.sleep(self._t)
+                            self._func()
+                            # print('exiting loop()')
+                    except Exception as e:
+                        print('Error in timer func={}\n{}'.format(self._func, e))
+            except Exception as e:
+                if 'can\'t start new thread' in str(e):
+                    print('There are too many threads right now.\nWaiting for more threads to be available.')
+                time.sleep(1)
+                self.Start()
+
+    def ChangeTime(self, new_t):
+        '''
+        This method allows the user to change the timer speed on the fly.
+        :param new_t:
+        :return:
+        '''
+        print('Timer.ChangeTime({})'.format(new_t))
+        was_running = self._run
+
+        self.Stop()
+        self._t = new_t
+
+        if was_running:
+            self.Start()
 
     def Restart(self):
-        #To easily replace a Wait object
+        # To easily replace a Wait object
         self.Start()
 
     def Cancel(self):
-        #To easily replace a Wait object
+        # To easily replace a Wait object
         self.Stop()
 
 

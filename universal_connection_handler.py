@@ -755,8 +755,7 @@ class UniversalConnectionHandler:
 
     @Disconnected.setter
     def Disconnected(self, callback):
-        if __name__ == '__main__':
-            self._disconnected_callback = callback
+        self._disconnected_callback = callback
 
 
 class Timer:

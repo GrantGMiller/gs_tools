@@ -651,6 +651,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
 
 class UIDevice(extronlib.device.UIDevice):
+    #test
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 

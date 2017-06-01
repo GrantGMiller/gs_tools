@@ -1,15 +1,15 @@
 from extronlib.system import Clock
 
-CallbackDict = {
-    # ClockObject: {
+
+class ScheduleManager():
+    CallbackDict = {
+        # ClockObject: {
         # 'Function': functionObject,
         # 'args': args,
         # 'kwargs': kwargs
         # }
-}
+    }
 
-
-class ScheduleManager():
     def __init__(self):
         self.Clocks = []
 
@@ -72,33 +72,33 @@ class ScheduleManager():
             Times.append(time)
 
         # Create the clock
-        NewClock = Clock(Times, Days, ClockCallback)
+        NewClock = Clock(Times, Days, self.ClockCallback)
         NewClock.Enable()
         self.Clocks.append(NewClock)
 
-        CallbackDict[NewClock] = {'Function': func,
-                                  'args': args,
-                                  'kwargs': kwargs
-                                  }
+        self.CallbackDict[NewClock] = {
+            'Function': func,
+            'args': args,
+            'kwargs': kwargs
+            }
 
         return NewClock
 
     #TODO - add a way to modify an existing schedule
 
+    def _ClockCallback(self, clock, dt):
+        func = self.CallbackDict[clock]['Function']
+        args = self.CallbackDict[clock]['args']
+        kwargs = self.CallbackDict[clock]['kwargs']
 
-def ClockCallback(clock, datetime):
-    func = CallbackDict[clock]['Function']
-    args = CallbackDict[clock]['args']
-    kwargs = CallbackDict[clock]['kwargs']
-
-    if not args == ():
-        if not kwargs == {}:
-            func(*args, **kwargs)
+        if not args == ():
+            if not kwargs == {}:
+                func(*args, **kwargs)
+            else:
+                func(*args)
         else:
-            func(*args)
-    else:
-        if not kwargs == {}:
-            func(**kwargs)
-        else:
-            func()
+            if not kwargs == {}:
+                func(**kwargs)
+            else:
+                func()
 

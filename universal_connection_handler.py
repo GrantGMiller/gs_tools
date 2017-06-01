@@ -1,5 +1,6 @@
 import extronlib
 from extronlib.system import File, Wait
+from extronlib import event
 import time
 
 debug = True  # Set to false to disable all print statements in this module
@@ -131,9 +132,50 @@ def ServerNonExUDPRxData(client, data):
 
 
 '''
+GREEN = 2
+RED = 1
+WHITE = 0
+
+
+def HandleConnection(interface, *args, **kwargs):
+    if UniversalConnectionHandler._defaultCH is None:
+        newCH = UniversalConnectionHandler()
+        UniversalConnectionHandler._defaultCH = newCH
+
+    UniversalConnectionHandler._defaultCH.maintain(interface)
+
+statusButtons = {}
+
+
+def AddStatusButton(interface, button):
+    if UniversalConnectionHandler._defaultCH is None:
+        newCH = UniversalConnectionHandler()
+        UniversalConnectionHandler._defaultCH = newCH
+
+    if interface not in statusButtons:
+        statusButtons[interface] = []
+
+    if button not in statusButtons[interface]:
+        statusButtons[interface].append(button)
+
+    @event(interface, ['Connected', 'Disconnected'])
+    def interfaceConnectionEvent(interface, state):
+        for btn in statusButtons[interface]:
+            if state in ['Connected', 'Online']:
+                btn.SetState(GREEN)
+                btn.SetText('Connected')
+            elif state in ['Disconnected', 'Offline']:
+                btn.SetState(RED)
+                btn.SetText('Disconnected')
+            else:
+                btn.SetState(WHITE)
+                btn.SetText('Error')
 
 
 class UniversalConnectionHandler:
+
+    _defaultCH = None
+
     def __init__(self, filename='connection_handler.log'):
         '''
         :param filename: str() name of file to write connection status to
@@ -248,6 +290,13 @@ class UniversalConnectionHandler:
                         break
                     else:
                         time.sleep(1)
+
+        else: #Assuming a extronlib.device class
+            if hasattr(interface, 'Online'):
+                interface.Online = self._get_controlscript_connection_callback(interface)
+            if hasattr(interface, 'Offline'):
+                interface.Offline = self._get_controlscript_connection_callback(interface)
+
 
     def _maintain_serverEx_TCP(self, parent):
         parent.Connected = self._get_serverEx_connection_callback(parent)
@@ -471,8 +520,21 @@ class UniversalConnectionHandler:
 
     def _get_controlscript_connection_callback(self, interface):
         # generate a new function that includes the 'kind' of connection
-        def controlscript_connection_callback(interface, state):
-            self._update_connection_status_serial_or_ethernetclient(interface, state, 'ControlScript')
+
+        if (isinstance(interface, extronlib.device.ProcessorDevice) or
+            isinstance(interface, extronlib.device.UIDevice)):
+
+            def controlscript_connection_callback(intf, state):
+                if callable(self._connected_callback):
+                    self._connected_callback(interface, state)
+                self._log_connection_to_file(intf, state, kind='ControlScript')
+
+
+        elif (isinstance(interface, extronlib.interface.SerialInterface) or
+              isinstance(interface, extronlib.interface.EthernetClientInterface)):
+
+            def controlscript_connection_callback(interface, state):
+                self._update_connection_status_serial_or_ethernetclient(interface, state, 'ControlScript')
 
         return controlscript_connection_callback
 

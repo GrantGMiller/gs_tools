@@ -8,7 +8,7 @@ import extronlib
 from extronlib import event, Version
 from extronlib.device import ProcessorDevice, UIDevice
 from extronlib.interface import (EthernetClientInterface, SerialInterface)
-from extronlib.system import Wait, ProgramLog, File, Ping, RFile
+from extronlib.system import Wait, ProgramLog, File, Ping, RFile, Clock
 from extronlib.ui import Button, Level
 
 import json
@@ -16,14 +16,18 @@ import itertools
 import time
 import copy
 import hashlib
+import datetime
+import calendar
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     def newPrint(*args, **kwargs):
         pass
 
     print = newPrint
+
+debugConnectionHandler = False
 
 # *******************************************************************************
 
@@ -103,7 +107,7 @@ class Button(extronlib.ui.Button):
             setattr(self, eventName, lambda *args: None)
 
     def _DoStateChange(self, state):
-        print(self.ID, '_DoStateChange')
+        #print(self.ID, '_DoStateChange')
         if state in self.StateChangeMap:
             # print(self.ID, 'state in self.StateChangeMap')
             NewState = self.StateChangeMap[state]
@@ -358,6 +362,9 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
         else:
             print('Error in EthernetServerInterfaceEx.__new__\n port={}'.format(port))
 
+        print('EthernetServerInterfaceEx._ports_in_use={}'.format(cls._ports_in_use))
+        print('EthernetServerInterfaceEx._all_servers_ex={}'.format(cls._all_servers_ex))
+
     def __init__(self, *args, **kwargs):
         print('EthernetServerInterfaceEx.__init__\n, args={}\n kwargs={}'.format(args, kwargs))
 
@@ -382,6 +389,9 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
             print('EthernetServerInterfaceEx.__init__\n This interface has been instantiated before. do nothing')
             pass
 
+        print('EthernetServerInterfaceEx._ports_in_use={}'.format(self._ports_in_use))
+        print('EthernetServerInterfaceEx._all_servers_ex={}'.format(self._all_servers_ex))
+
         print('EthernetServerInterfaceEx.__init__ complete')
 
     def StartListen(self):
@@ -399,6 +409,9 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
 
     @classmethod
     def port_in_use(cls, port_number):
+        if not isinstance(port_number, int):
+            raise Exception('port_number must be of type "int"')
+
         if port_number in cls._ports_in_use:
             print('EthernetServerInterfaceEx.port_in_use({}) return True'.format(port_number))
             return True
@@ -589,7 +602,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
         print('ProcessorDevice._make_port_available(Host={}\n Port={}'.format(Host, Port))
         # return None
         if Port in cls._serial_ports_in_use[Host.DeviceAlias]:
-            print('The port has already been instantiated. but make it available again')
+            print('The port {} has already been instantiated. but make it available again'.format(Port))
             cls._serial_ports_in_use[Host.DeviceAlias].remove(Port)
         else:
             print('The port has never been instantiated. do nothing.')
@@ -669,15 +682,16 @@ class UIDevice(extronlib.device.UIDevice):
 
         self._exclusive_modals = []
 
+        self._PageHistory = [] #hold last X pages
+        self._PageOffset = 0 # 0 = last entry in
+
     def ShowPopup(self, popup, duration=0):
+        self._DoShowPopup(popup, duration)
+
         if popup in self._exclusive_modals:
             for modal_name in self._exclusive_modals:
                 if modal_name != popup:
                     self.HidePopup(modal_name)
-                else:
-                    self._DoShowPopup(modal_name)
-        else:
-            self._DoShowPopup(popup, duration)
 
     def _DoShowPopup(self, popup, duration=0):
             super().ShowPopup(popup)
@@ -721,6 +735,13 @@ class UIDevice(extronlib.device.UIDevice):
                 self.PageData[PageName] = 'Hidden'
 
         self.PageData[page] = 'Showing'
+
+        if page not in self._PageHistory:
+            self._PageHistory.append(page)
+
+    def PageBack(self):
+        #TODO
+        pass
 
     def IsShowing(self, pageOrPopupName):
         '''
@@ -779,6 +800,10 @@ class UIDevice(extronlib.device.UIDevice):
     def SetExclusiveModals(self, modals):
         self._exclusive_modals = modals
 
+    def SetVisible(self, id, state):
+        for btn in Button.AllButtons:
+            if btn.ID == id:
+                    btn.SetVisible(state)
 
 # extronlib *********************************************************************
 
@@ -1051,7 +1076,7 @@ def HandleConnection(interface, serverLimit=None):
     :param serverLimit: str(), None or 'One connection per IP'
     :return:
     '''
-    print('HandleConnection(interface={})'.format(interface))
+    if debugConnectionHandler: print('HandleConnection(interface={})'.format(interface))
     _NewStatus(interface, 'Default')
 
     if isinstance(interface, extronlib.interface.EthernetClientInterface):
@@ -1078,7 +1103,7 @@ def HandleConnection(interface, serverLimit=None):
                     for client in interface._parent.Clients:
                         if client != interface:
                             if client.IPAddress == interface.IPAddress:
-                                print('Only one connection allowed per IP.\nDisconnecting client=', client)
+                                if debugConnectionHandler: print('Only one connection allowed per IP.\nDisconnecting client=', client)
                                 client.Disconnect()  # There is another client connected from the same IP. Disconnect it.
 
             # Convert ClientObjects to ServerEx
@@ -1091,14 +1116,14 @@ def HandleConnection(interface, serverLimit=None):
             elif len(interface.Clients) == 0:
                 state = 'Disconnected'
 
-        print('PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
+        if debugConnectionHandler: print('PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
 
         # Handle the Disconnected/Offline event
         if state in ['Disconnected', 'Offline']:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
                     if interface in _connection_status:
-                        print('_PhysicalConnectionHandler Disconnected WaitReconnect.Restart()')
+                        if debugConnectionHandler: print('_PhysicalConnectionHandler Disconnected WaitReconnect.Restart()')
                         WaitReconnect.Restart()
 
         # Handle the Connected/Online event
@@ -1109,20 +1134,20 @@ def HandleConnection(interface, serverLimit=None):
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
                 if interface.Protocol == 'TCP':  # UDP is "connection-less"
                     if interface in _connection_status:
-                        print('_PhysicalConnectionHandler Connected WaitReconnect.Restart()')
+                        if debugConnectionHandler: print('_PhysicalConnectionHandler Connected WaitReconnect.Restart()')
                         WaitReconnect.Cancel()
 
         # If the status has changed from Connected to Disconnected or vice versa, log the change
         if _connection_status[interface] != state:
             if isinstance(interface, extronlib.interface.EthernetClientInterface):
-                print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
+                if debugConnectionHandler: print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
 
             elif (isinstance(interface, extronlib.device.UIDevice) or
                       isinstance(interface, extronlib.device.ProcessorDevice)):
-                print('{} {}'.format(interface.DeviceAlias, state))
+                if debugConnectionHandler: print('{} {}'.format(interface.DeviceAlias, state))
 
             elif isinstance(interface, extronlib.interface.SerialInterface):
-                print('Proc {} Port {} {}'.format(interface.Host.DeviceAlias, interface.Port, state))
+                if debugConnectionHandler: print('Proc {} Port {} {}'.format(interface.Host.DeviceAlias, interface.Port, state))
 
         _NewStatus(interface, state, 'Physically')
 
@@ -1141,7 +1166,7 @@ def HandleConnection(interface, serverLimit=None):
     # Module Connection status
     def _GetModuleCallback(interface):
         def _module_connection_callback(command, value, qualifier):
-            print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface, value))
+            if debugConnectionHandler: print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface, value))
 
             _NewStatus(interface, value, 'Logically')
 
@@ -1194,7 +1219,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         OldSend = interface.Send
 
         def NewSend(*args, **kwargs):
-            print('NewSend\n interface={}\n args={}\n kwargs={}\n count={}\n limit={}'.format(interface, args, kwargs,
+            if debugConnectionHandler: print('NewSend\n interface={}\n args={}\n kwargs={}\n count={}\n limit={}'.format(interface, args, kwargs,
                                                                                               _connection_send_counter[
                                                                                                   interface],
                                                                                               limit))  # debugging
@@ -1211,7 +1236,7 @@ def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
         OldSendAndWait = interface.SendAndWait
 
         def NewSendAndWait(*args, **kwargs):
-            print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
+            if debugConnectionHandler: print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
 
             _connection_send_counter[interface] += 1
 
@@ -2025,8 +2050,17 @@ class ScrollingTable():
             OldHandler = self._btn.Released
 
             def NewHandler(button, state):
-                if ScrollingTable_debug and debug: print(
-                    'Cell NewHandler(\n button={}\n state={}'.format(button, state))
+                if ScrollingTable_debug and debug: print('Cell NewHandler(\n button={}\n state={}'.format(button, state))
+
+                #Handle Mutually exclusive cells
+                if self._parent_table._cellMutex == True:
+                    for cell in self._parent_table._cells:
+                        if cell._row != self._row:
+                            cell.SetState(0)
+                        else:
+                            cell.SetState(1)
+
+                #Do the new callback
                 if OldHandler:
                     OldHandler(button, state)
                 if self._callback:
@@ -2038,6 +2072,10 @@ class ScrollingTable():
             if self._Text is not text:
                 self._btn.SetText(text)
                 self._Text = text
+
+        def SetState(self, State):
+            if self._btn.State is not State:
+                self._btn.SetState(State)
 
         def get_col(self):
             return self._col
@@ -2069,6 +2107,11 @@ class ScrollingTable():
 
         self._cell_pressed_callback = None
         self._scroll_level = None
+        self._scroll_up_button = None
+        self._scroll_down_button = None
+        self._scroll_label = None
+
+        self._cellMutex = False
 
         # _cell_pressed_callback should accept 2 params; the scrolling table object, and the cell object
 
@@ -2093,6 +2136,10 @@ class ScrollingTable():
         self._cell_pressed_callback = func
         for cell in self._cells:
             cell._callback = func
+
+    def SetCellMutex(self, state):
+        #Setting this true will highlight a row when it is pressed
+        self._cellMutex = state
 
     def set_table_header_order(self, header_list=[]):
         # header_list example: ['IP Address', 'Port']
@@ -2160,6 +2207,11 @@ class ScrollingTable():
         if ScrollingTable_debug and debug: print('ScrollingTable.clear_all_data()')
         self._data_rows = []
         self.reset_scroll()
+
+        if self._cellMutex is True:
+            for cell in self._cells:
+                cell.SetState(0)
+
         self._update_table()
 
     def update_row_data(self, where_dict, replace_dict):
@@ -2364,6 +2416,7 @@ class ScrollingTable():
             max_row_offset = len(self._data_rows) - self._max_row
             percent = toPercent(self._current_row_offset, 0, max_row_offset)
             self._scroll_level.SetLevel(percent)
+            self.IsScrollable() #show/hide the scroll bar
 
     def get_column_buttons(self, col_number):
         # returns all buttons in the column.
@@ -2391,6 +2444,34 @@ class ScrollingTable():
 
         raise Exception(
             'ScrollingTable.get_cell_value Not found. row_number={}, col_number={}'.format(row_number, col_number))
+
+    def get_row_data_from_cell(self, cell):
+        #returns a dict of the row data
+        rowIndex = cell.get_row()
+        dataIndex = rowIndex + self._current_row_offset
+        return self._data_rows[dataIndex]
+
+    def get_row_data(self, whereDict):
+        #returns a list of dicts that match whereDict
+        result = []
+
+        for row in self._data_rows:
+            # verify all the keys from where_dict are in row and the values match
+            all_keys_match = True
+            for key in where_dict:
+                if key in row:
+                    if where_dict[key] != row[key]:
+                        all_keys_match = False
+                        break
+                else:
+                    all_keys_match = False
+                    break
+
+            if all_keys_match:
+                # All the key/values from where_dict match row, update row with replace dict values
+                result.append(row)
+
+        return result
 
     def reset_scroll(self):
         self._current_row_offset = 0
@@ -2450,6 +2531,51 @@ class ScrollingTable():
         # level = extronlib.ui.Level
         self._scroll_level = level
 
+    def register_scroll_up_button(self, button):
+        self._scroll_up_button = button
+
+    def register_scroll_down_button(self, button):
+        self._scroll_down_button = button
+
+    def register_scroll_label(self, label):
+        self._scroll_label = label
+
+    def IsScrollable(self):
+        '''
+        returns True if scroll buttons should be provided
+
+        basically if there are 10 rows on your TLP, but you only have 5 rows of data, then you dont need to show scroll buttons, return False
+        '''
+        if len(self._data_rows) > self._max_row:
+            if self._scroll_level is not None:
+                self._scroll_level.SetVisible(True)
+
+            if self._scroll_up_button is not None:
+                self._scroll_up_button.SetVisible(True)
+
+            if self._scroll_down_button is not None:
+                self._scroll_down_button.SetVisible(True)
+
+            if self._scroll_label is not None:
+                self._scroll_label.SetVisible(True)
+
+            return True
+
+        else:
+            if self._scroll_level is not None:
+                self._scroll_level.SetVisible(False)
+
+            if self._scroll_up_button is not None:
+                self._scroll_up_button.SetVisible(False)
+
+            if self._scroll_down_button is not None:
+                self._scroll_down_button.SetVisible(False)
+
+            if self._scroll_label is not None:
+                self._scroll_label.SetVisible(False)
+
+            return False
+
 
 # UserInput *********************************************************************
 class UserInputClass:
@@ -2458,6 +2584,325 @@ class UserInputClass:
 
         self._kb_feedback_btn = None
         self._kb_text_feedback = None
+
+    def setup_calendar(self,
+        calDayNumBtns, #list of int() where the first int is the first day of the first week. Assuming 5 weeks of 7 days
+        calDayAgendaBtns=None,
+        calBtnNext=None, #button that when pressed will show the next month
+        calBtnPrev=None, #button that when pressed will show the previous month
+        calBtnCancel=None, #button when presses will hide the modal
+        calLblMessage=None, #Button or Label
+        calLblMonthYear=None,
+        calPopupName=None,
+        startDay=None,
+        maxAgendaWidth=None
+
+        ):
+
+        #Save args
+        self._calDayNumBtns = calDayNumBtns
+        self._calDayAgendaBtns = calDayAgendaBtns
+        self._calBtnNext = calBtnNext
+        self._calBtnPrev = calBtnPrev
+        self._calBtnCancel = calBtnCancel
+        self._calLblMessage = calLblMessage
+        self._calLblMonthYear = calLblMonthYear
+        self._calPopupName = calPopupName
+        self._maxAgendaWidth = maxAgendaWidth
+
+        #Create attributes
+        if startDay is None:
+            startDay = 6 #sunday
+        self._calObj = calendar.Calendar(startDay)
+
+        self._currentYear = 0
+        self._currentMonth = 0
+        self._currentDatetime = None
+        self._calEvents = [
+            #{'datetime': dt,
+            # 'name': 'name of event',
+            # 'meta': {'Room Name': 'Room1',
+            #          'Device Name': 'Room2',
+            #           }
+            #}
+            ]
+        self._calCallback = None
+        self._dtMap = {}
+        self._calHeldEvent = None
+
+        #Hide/Cancel button
+        if self._calBtnCancel is not None:
+            @event(self._calBtnCancel, 'Released')
+            def calBtnCancelEvent(button, state):
+                if self._calPopupName is not None:
+                    self._TLP.HidePopup(self._calPopupName)
+
+        #Next/Prev buttons
+        @event(self._calBtnNext, 'Released')
+        def calBtnNextEvent(button, state):
+            self._currentMonth += 1
+            if self._currentMonth > 12:
+                self._currentYear += 1
+                self._currentMonth = 1
+
+            self._calDisplayMonth(datetime.datetime(year=self._currentYear, month=self._currentMonth, day=1))
+
+        @event(self._calBtnPrev, 'Released')
+        def _calBtnPrevEvent(button, state):
+            self._currentMonth -= 1
+            if self._currentMonth < 1:
+                self._currentYear -= 1
+                self._currentMonth = 12
+
+            self._calDisplayMonth(datetime.datetime(year=self._currentYear, month=self._currentMonth, day=1))
+
+        #Day/Agenda buttons
+        @event(self._calDayNumBtns, 'Released')
+        @event(self._calDayAgendaBtns, 'Released')
+        def calDayNumBtnsEvent(button, state):
+            pass
+
+        #Init the button states
+        for btn in self._calDayNumBtns:
+            btn.SetState(0)
+        for btn in self._calDayAgendaBtns:
+            btn.SetState(0)
+
+        #Load previous data
+        self._LoadCalData()
+
+    def get_date(self,
+            popupName,
+            callback=None, # function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            passthru=None,  # any object that you want to pass thru to the callback
+            message=None,
+            startMonth=None,
+            startYear=None,
+            ):
+
+        self._calCallback=callback
+
+        if self._calLblMessage is not None:
+            if message is None:
+                self._calLblMessage.SetText('Select a date')
+            else:
+                self._calLblMessage.SetText(message)
+
+        #Populate the calendar info
+        now = datetime.datetime.now()
+        if startMonth is None:
+            startMonth = now.month
+
+        if startYear is None:
+            startYear = now.year
+
+        self._currentYear = startYear
+        self._currentMonth = startMonth
+
+        self._calDisplayMonth(datetime.datetime(year=startYear, month=startMonth, day=1))
+
+        #Show the calendar
+        self._TLP.ShowPopup(popupName)
+
+        @event(self._calDayNumBtns, 'Released')
+        @event(self._calDayAgendaBtns, 'Released')
+        def calDayNumBtnsEvent(button, state):
+            if callable(self._calCallback):
+                dt = self._GetDatetimeFromButton(button)
+                self._calCallback(self, dt)
+                self._currentDatetime = dt
+
+    def CalOffsetTimedelta(self, delta):
+        if self._currentDatetime is None:
+            self._currentDatetime = datetime.datetime.now()
+
+        self._currentDatetime += delta
+
+        return self._currentDatetime
+
+    def GetCalCurrentDatetime(self):
+        return self._currentDatetime
+
+    def _GetDatetimeFromButton(self, button):
+        for date in self._dtMap:
+            if button in self._dtMap[date]:
+                return date
+
+    def UpdateMonthDisplay(self, dt=None):
+        if dt is None:
+            dt = self.GetCalCurrentDatetime()
+        self._calDisplayMonth(dt)
+
+    def _calDisplayMonth(self, dt):
+        #date = datetime.datetime object
+        #this will update the TLP with data for the month of the datetime.date
+
+        self._dtMap = {}
+
+        self._calLblMonthYear.SetText(dt.strftime('%B %Y'))
+
+        monthDates = list(self._calObj.itermonthdates(dt.year, dt.month))
+        for date in monthDates:
+            index = monthDates.index(date)
+            if index >= len(self._calDayNumBtns):
+                continue
+            btnDayNum = self._calDayNumBtns[index]
+            btnDayAgenda= self._calDayAgendaBtns[index]
+
+            #Save the datetime and map it to the buttons for later use
+            self._dtMap[date] = [btnDayNum, btnDayAgenda]
+
+            if date.month != self._currentMonth: #Not part of the month
+                newState = 1
+                newText = date.strftime('%d ')
+            else:#is part of the month
+                newState = 0
+                newText = date.strftime('%d ')
+
+            agendaText = self._GetAgendaText(date)
+
+            #btnDayNum
+            if btnDayNum.State != newState:
+                btnDayNum.SetState(newState)
+
+            if btnDayNum.Text != newText:
+                btnDayNum.SetText(newText)
+
+            #btnDayAgenda
+            if btnDayAgenda.State != newState:
+                btnDayAgenda.SetState(newState)
+
+            if btnDayAgenda.Text != agendaText:
+                btnDayAgenda.SetText(agendaText)
+
+    def _GetAgendaText(self, date):
+        result = ''
+
+        for item in self._calEvents:
+            dt = item['datetime']
+            if date.year == dt.year:
+                if date.month == dt.month:
+                    if date.day == dt.day:
+                        name = item['name']
+                        string = '{} - {}\n'.format(dt.strftime('%-I:%M%p'), name)
+
+                        #Make sure the string isnt too long
+                        if self._maxAgendaWidth is not None:
+                            if len(string) > self._maxAgendaWidth:
+                                string = string[:self._maxAgendaWidth-4] + '...\n'
+
+                        result += string
+
+        return result
+
+    def GetAgendaFromDatetime(self, date):
+        #returns list of eventDicts
+
+        result = []
+
+        for item in self._calEvents:
+            dt = item['datetime']
+            if date.year == dt.year:
+                if date.month == dt.month:
+                    if date.day == dt.day:
+                        name = item['name']
+                        result.append(item)
+
+        return result
+
+    def GetAllCalendarEvents(self):
+        return self._calEvents.copy()
+
+    def AddCalendarEvent(self, dt, name, metaDict=None):
+        if metaDict is None:
+            metaDict = {}
+
+        eventDict = {
+            'datetime': dt,
+            'name': name,
+            'meta': metaDict,
+            }
+
+        self._calEvents.append(eventDict)
+
+        self._SaveCalData()
+        self._calDisplayMonth(dt)
+
+    def _SaveCalData(self):
+        #Write the data to a file
+        saveItems = []
+
+        for item in self._calEvents:
+            dt = item['datetime']
+            saveItem = {'datetime': GetDatetimeKwargs(dt),
+                        'name': item['name'],
+                        'meta': item['meta'],
+                        }
+            saveItems.append(saveItem)
+
+        with File('calendar.json', mode='wt') as file:
+            file.write(json.dumps(saveItems))
+
+    def _LoadCalData(self):
+        if not File.Exists('calendar.json'):
+            self._calEvents = []
+            return
+
+        with File('calendar.json', mode='rt') as file:
+            saveItems = json.loads(file.read())
+
+            for saveItem in saveItems:
+                dt = datetime.datetime(**saveItem['datetime'])
+
+                loadItem = {
+                    'datetime': dt,
+                    'name': saveItem['name'],
+                    'meta': saveItem['meta'],
+                    }
+
+                self._calEvents.append(loadItem)
+
+    def GetCalEvents(self, dt):
+        #return list of events happening at a specific datetime.datetime
+        result = []
+        for item in self._calEvents:
+            dataDT = item['datetime']
+            if dt.year == dataDT.year:
+                if dt.month == dataDT.month:
+                    if dt.day == dataDT.day:
+                        if isinstance(dt, datetime.datetime):
+                            if dt.hour is not 0:
+                                if dt.hour == dataDT.hour:
+                                    if dt.minute is not 0:
+                                        if dt.minute == dataDT.minute:
+                                            result.append(item)
+                                    else:
+                                        result.append(item)
+                            else:
+                                result.append(item)
+                        else:#probably a datetime.date object
+                            result.append(item)
+
+        return result
+
+    def HoldThisEvent(self, eventDict):
+        self._calHeldEvent = eventDict
+
+    def GetHeldEvent(self):
+        return self._calHeldEvent
+
+    def TrashHeldEvent(self):
+        self.DeleteEvent(self._calHeldEvent)
+        self._calHeldEvent = None
+
+    def DeleteEvent(self, eventDict):
+        if eventDict in self._calEvents:
+            self._calEvents.remove(eventDict)
+        else:
+            raise Exception('Exception in DeleteEvent\neventDict not in self._calEvents')
+
+        self._SaveCalData()
 
     def setup_list(self,
                    list_popup_name,  # str()
@@ -2470,6 +2915,13 @@ class UserInputClass:
 
         self._list_popup_name = list_popup_name
         self._list_table = ScrollingTable()
+
+        if list_btn_scroll_up:
+            self._list_table.register_scroll_up_button(list_btn_scroll_up)
+
+        if list_btn_scroll_down:
+            self._list_table.register_scroll_down_button(list_btn_scroll_down)
+
         self._list_callback = None
         self._list_label_message = list_label_message
 
@@ -2728,6 +3180,7 @@ class UserInputClass:
         self._bool_btn_true.Host.ShowPopup(self._bool_popup_name)
 
 
+
 # Non-global variables **********************************************************
 class NonGlobal:
     '''
@@ -2813,6 +3266,55 @@ class Timer:
     def Cancel(self):
         # To easily replace a Wait object
         self.Stop()
+
+def GetDatetimeKwargs(dt):
+    d = {'year':dt.year,
+         'month': dt.month,
+         'day': dt.day,
+         'hour': dt.hour,
+         'minute': dt.minute,
+         'second': dt.second,
+         'microsecond': dt.microsecond,
+         }
+    return d
+
+class Schedule:
+    def __init__(self):
+        self._wait = None
+
+    def Set(self, set_dt, func, *args, **kwargs):
+        #This will execute func when time == dt with args/kwargs
+
+        if self._wait is not None:
+            self._wait.Cancel()
+            self._wait = None
+
+        #Save the attributes
+        self._dt = set_dt
+        self._func = func
+        self._args = args
+        self._kwargs = kwargs
+
+        nowDT = datetime.datetime.now()
+        delta = self._dt - nowDT
+        waitSeconds = delta.total_seconds()
+        print('waitSeconds=', waitSeconds)
+
+        self._wait = Wait(waitSeconds, self._callback)
+
+    def _callback(self):
+        print('Schedule._callback, self.func={}, self.args={}, self.kwargs={},'.format(self._func, self._args, self._kwargs))
+        print('Processor time =', time.asctime())
+        if not self._args == ():
+            if not self._kwargs == {}:
+                self._func(*self._args, **self._kwargs)
+            else:
+                self._func(*self._args)
+        else:
+            if not self._kwargs == {}:
+                self._func(**self._kwargs)
+            else:
+                self._func()
 
 
 print('End  GST')

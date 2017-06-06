@@ -694,7 +694,7 @@ class UIDevice(extronlib.device.UIDevice):
                     self.HidePopup(modal_name)
 
     def _DoShowPopup(self, popup, duration=0):
-            super().ShowPopup(popup)
+            super().ShowPopup(popup, duration)
             if duration is not 0:
                 if popup in self.PopupWaits:
                     self.PopupWaits[popup].Cancel()

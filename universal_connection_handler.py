@@ -137,7 +137,7 @@ RED = 1
 WHITE = 0
 
 
-def HandleConnection(interface, *args, **kwargs):
+def HandleConnection(*args, **kwargs):
     if UniversalConnectionHandler._defaultCH is None:
         newCH = UniversalConnectionHandler()
         UniversalConnectionHandler._defaultCH = newCH
@@ -146,10 +146,7 @@ def HandleConnection(interface, *args, **kwargs):
         def newCHEvent(intf, state):
             print('newCHEvent(interface={}, state={})'.format(intf, state))
 
-    UniversalConnectionHandler._defaultCH.maintain(
-        interface,
-        keep_alive_query_cmd='q',  # assuming its an extron device
-    )
+    UniversalConnectionHandler._defaultCH.maintain(*args, **kwargs)
 
 
 statusButtons = {}
@@ -263,10 +260,11 @@ class UniversalConnectionHandler:
                  interface,
                  keep_alive_query_cmd=None,
                  keep_alive_query_qual=None,
-                 poll_freq=5,
-                 disconnect_limit=5,
-                 timeout=5,
-                 connection_retry_freq=5):
+                 poll_freq=5, #how many seconds between polls
+                 disconnect_limit=5, #how many missed queries before a 'Disconnected' event is triggered
+                 timeout=5, #After this many seconds, a client who has not sent any data to the server will be disconnected.
+                 connection_retry_freq=5, #how many seconds after a Disconnect event to try to do Connect
+                 ):
         '''
         This method will maintain the connection to the interface.
         :param interface: extronlib.interface or extron GS module with .SubscribeStatus('ConnectionStatus')
@@ -324,6 +322,14 @@ class UniversalConnectionHandler:
                 interface.Offline = self._get_controlscript_connection_callback(interface)
 
     def _maintain_serverEx_TCP(self, parent):
+        #save old handlers
+        if parent not in self._user_connected_handlers:
+            self._user_connected_handlers[parent] = parent.Connected
+
+        if parent not in self. _user_disconnected_handlers:
+            self._user_disconnected_handlers[parent] = parent.Disconnected
+
+        #Create new handlers
         parent.Connected = self._get_serverEx_connection_callback(parent)
         parent.Disconnected = self._get_serverEx_connection_callback(parent)
 
@@ -679,6 +685,17 @@ class UniversalConnectionHandler:
 
     def _get_serverEx_connection_callback(self, parent):
         def controlscript_connection_callback(client, state):
+
+            if state == 'Connected':
+                if parent in self._user_connected_handlers:
+                    if callable(self._user_connected_handlers[parent]):
+                        self._user_connected_handlers[parent](client, state)
+
+            elif state == 'Disconnected':
+                if parent in self._user_disconnected_handlers:
+                    if callable(self._user_disconnected_handlers[parent]):
+                        self._user_disconnected_handlers[parent](client, state)
+
             self._update_connection_status_server(parent, client, state, 'ControlScript')
 
         return controlscript_connection_callback

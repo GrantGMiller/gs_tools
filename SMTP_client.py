@@ -24,13 +24,13 @@ class SMTP_Client(EthernetClientInterface):
     def __init__(self, smtpServer=None, port=None, username=None, password=None, sslEnabled=None):
         #TODO - account for username, password, sslEnabled
         self.IP = smtpServer
-        self.Port = port
+        self.IPPort = port
         self.Receivers = []
         self.Received220 = False
         self.Received250 = False
         self.FileBytes = None
 
-        self.Interface = EthernetClientInterface(IP, Port)
+        self.Interface = EthernetClientInterface(self.IP, self.IPPort)
 
         @event(self.Interface, 'ReceiveData')
         def PrintRxData(interface, data):

@@ -15,6 +15,9 @@ import datetime, copy
     2017-06-07 - Joel Lasher
     Created GetMeetingAttachment which returns the contents of a meeting attachment
 
+    2017-06-08 - Joel Lasher
+    Updated GetMeetingAttachment and added example for saving an attachment below
+
 
 Example main.py
 
@@ -24,8 +27,20 @@ testCalendar.UpdateCalendar()
 print(testCalendar.GetWeekData())
 print(testCalendar.GetMeetingData('Tue', '3:00PM'))
 
-# Get meeting attachment
-attachments = testCalendar.GetMeetingAttachment('Tue', '3:00PM')
+Attachment = testCalendar.GetMeetingAttachment('Thu', '3:00PM')
+attContent = b64decode(Attachment['Attachment1']['Content'])
+attType = b64decode(Attachment['Attachment1']['ContentType'])
+
+fType = {'video/mp4': '.mp4',
+         'text/plain': '.txt',
+         'text/xml': '.xml',
+         # ...
+         'audio/mp4': '.mp4'}
+
+fName = 'myfile.{}'.format(fType.get(attType))
+f = open(fName, 'wb')
+f.write(attContent)
+f.close()
 
 """
 
@@ -541,9 +556,14 @@ class Exchange():
         request = self.httpRequest(xmlBody)
 
     def _attachmentHelper(self, attachmentID):
+        # Compile regex for different XML components
+        regExReponse = re.compile(r'<m:ResponseCode>(.+)</m:ResponseCode>')
+        regExName = re.compile(r'<t:Name>(.+)</t:Name>')
+        regExContentType = re.compile(r'<t:ContentType>(.+)</t:ContentType>')
         regExContent = re.compile(r'<t:Content>(.+)</t:Content>')
-        encodedData = []
-        rawData = []
+        attData = {}
+        # Check for multiple attachments and parse the responses, then store
+        # them in a dict
         for i, attachment in enumerate(attachmentID):
             xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                             <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -563,14 +583,18 @@ class Exchange():
                             </soap:Envelope>""".format(self.soapHeader, attachmentID[i])
 
             request = self.httpRequest(xmlBody)
-            itemContent = regExContent.search(request)
-            encodedData.append(itemContent.group(1))
-        print(encodedData)
-
-        for item, val in enumerate(encodedData):
-            rawData.append(b64decode(encodedData[item]).decode())
-
-        return rawData
+            responseCode = regExReponse.search(request).group(1)
+            if responseCode == 'NoError': # Handle errors sent by the server
+                itemName = regExName.search(request).group(1)
+                itemContent = regExContent.search(request).group(1)
+                itemContentType = regExContentType.search(request).group(1)
+                attData['Attachment{}'.format(i+1)] = {'Name':'{}'.format(itemName),
+                                                       'Content-Type':'{}'.format(itemContentType),
+                                                       'Content':'{}'.format(itemContent)}
+            else:
+                print('An error occurred requesting the attachment: {}'.format(responseCode))
+                return
+        return attData
 
 
     def getAttachment(self, itemID):
@@ -682,5 +706,9 @@ class Exchange():
         return self.calendarData[day]['Time'][time]
 
     def GetMeetingAttachment(self, day, time):
-        # Gets the attachment data as a list
-        return self.getAttachment(self.calendarData[day]['Time'][time]['Event_ID'])
+        # Returns a dictionary with the meeting's attachment content,
+        # content-type, and filename, if it exists.
+        if 'Event_ID' in self.calendarData[day]['Time'][time]:
+            return self.getAttachment(self.calendarData[day]['Time'][time]['Event_ID'])
+        else:
+            return None

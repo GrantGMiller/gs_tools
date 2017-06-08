@@ -1,5 +1,5 @@
 import urllib.request, re
-from base64 import b64encode
+from base64 import b64encode, b64decode
 import datetime, copy
 
 """
@@ -11,6 +11,9 @@ import datetime, copy
 
     2017-06-06
     Added ability to get calendar attachments and save them to local file system
+    
+    2017-06-07 - Joel Lasher
+    Created GetMeetingAttachment which returns the contents of a meeting attachment
 
 
 Example main.py
@@ -20,6 +23,9 @@ testCalendar = Exchange('outlook.office365.com', 'room@extron.com', 'password', 
 testCalendar.UpdateCalendar()
 print(testCalendar.GetWeekData())
 print(testCalendar.GetMeetingData('Tue', '3:00PM'))
+
+# Get meeting attachment
+attachments = testCalendar.GetMeetingAttachment('Tue', '3:00PM')
 
 """
 
@@ -534,6 +540,70 @@ class Exchange():
 
         request = self.httpRequest(xmlBody)
 
+    def _attachmentHelper(self, attachmentID):
+        regExContent = re.compile(r'<t:Content>(.+)</t:Content>')
+        encodedData = []
+        rawData = []
+        for i, attachment in enumerate(attachmentID):
+            xmlBody = """<?xml version="1.0" encoding="utf-8"?>
+                            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                           xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                                           xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                                           xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                              <soap:Header>
+                                {0}
+                              </soap:Header>
+                              <soap:Body>
+                                <m:GetAttachment>
+                                  <m:AttachmentIds>
+                                    <t:AttachmentId Id="{1}" />
+                                  </m:AttachmentIds>
+                                </m:GetAttachment>
+                              </soap:Body>
+                            </soap:Envelope>""".format(self.soapHeader, attachmentID[i])
+
+            request = self.httpRequest(xmlBody)
+            itemContent = regExContent.search(request)
+            encodedData.append(itemContent.group(1))
+        print(encodedData)
+
+        for item, val in enumerate(encodedData):
+            rawData.append(b64decode(encodedData[item]).decode())
+
+        return rawData
+
+
+    def getAttachment(self, itemID):
+        regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
+        xmlBody = """<?xml version="1.0" encoding="utf-8"?>
+                        <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                                       xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+                                       xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+                                       xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+                          <soap:Header>
+                            {0}
+                          </soap:Header>
+                          <soap:Body>
+                            <m:GetItem>
+                              <m:ItemShape>
+                                <t:BaseShape>IdOnly</t:BaseShape>
+                                <t:AdditionalProperties>
+                                  <t:FieldURI FieldURI="item:Attachments" />
+                                </t:AdditionalProperties>
+                              </m:ItemShape>
+                              <m:ItemIds>
+                                <t:ItemId Id="{1}" />
+                              </m:ItemIds>
+                            </m:GetItem>
+                          </soap:Body>
+                        </soap:Envelope>""".format(self.soapHeader, itemID)
+
+        request = self.httpRequest(xmlBody)
+        attachmentList = regExAttKey.findall(request)
+        return self._attachmentHelper(attachmentList)
+
+
+
     # ----------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
@@ -610,3 +680,7 @@ class Exchange():
         # day = str like 'Mon', 'Tue', etc
         # time = str like '5:30PM'
         return self.calendarData[day]['Time'][time]
+
+    def GetMeetingAttachment(self, day, time):
+        # Gets the attachment data as a list
+        return self.getAttachment(self.calendarData[day]['Time'][time]['Event_ID'])

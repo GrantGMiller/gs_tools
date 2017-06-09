@@ -20,7 +20,7 @@ from extronlib.system import File
 import base64
 
 
-class SMTP_Client(EthernetClientInterface):
+class SMTP_Client():
     def __init__(self, smtpServer=None, port=None, username=None, password=None, sslEnabled=None):
         #TODO - account for username, password, sslEnabled
         self.IP = smtpServer

@@ -1,6 +1,6 @@
 '''
 This module is meant to be a collection of tools to simplify common task in AV control systems.
-March 28, 2017
+Started: March 28, 2017
 '''
 print('Begin GST')
 
@@ -22,10 +22,7 @@ import calendar
 # Set this false to disable all print statements ********************************
 debug = False
 if not debug:
-    def newPrint(*args, **kwargs):
-        pass
-
-    print = newPrint
+    print = lambda *args, **kwargs: None
 
 debugConnectionHandler = False
 

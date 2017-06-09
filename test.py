@@ -15,4 +15,4 @@ print()
 print(exchange.GetMeetingData('Fri', '10:00AM'))
 
 contentDict = exchange.GetMeetingAttachment('Fri', '10:00AM')
-print('contentDict=', contentDict)
+print('\ncontentDict=', contentDict)

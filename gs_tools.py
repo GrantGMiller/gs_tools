@@ -1,6 +1,6 @@
 '''
 This module is meant to be a collection of tools to simplify common task in AV control systems.
-Started: March 28, 2017
+Started: March 28, 2017 and appended to continuously
 '''
 print('Begin GST')
 
@@ -32,12 +32,13 @@ debugConnectionHandler = False
 class Button(extronlib.ui.Button):
     AllButtons = []  # This will hold every instance of all buttons
 
-    EventNames = ['Pressed',
-                  'Tapped',
-                  'Held',
-                  'Repeated',
-                  'Released',
-                  ]
+    EventNames = [
+        'Pressed',
+        'Tapped',
+        'Held',
+        'Repeated',
+        'Released',
+        ]
 
     def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
         '''
@@ -1063,207 +1064,6 @@ def RemoveConnectionHandlers(interface):
         _connection_status.pop(interface)
     print('_connection_status=', _connection_status)
 
-
-def HandleConnection(interface, serverLimit=None):
-    '''
-    This will attempt to maintain the connection to the interface.
-     The programmer can call isConnected(interface) to find if this interface is connected.
-     Also the connection status will be logged to a file 'connection_handler.log' on the processor.
-    :param interface: extronlib.interface.* or extronlib.device.*
-    :param serverLimit: str(), None or 'One connection per IP'
-    :return:
-    '''
-    if debugConnectionHandler: print('HandleConnection(interface={})'.format(interface))
-    _NewStatus(interface, 'Default')
-
-    if isinstance(interface, extronlib.interface.EthernetClientInterface):
-        if interface.Protocol == 'TCP':  # UDP is "connection-less"
-            WaitReconnect = Wait(5, interface.Connect)
-            WaitReconnect.Cancel()
-
-    # Physical connection status
-    def _PhysicalConnectionHandler(interface, state):
-        # TODO: Add socket timeout. If no comunication for X seconds, disconnect the client.
-
-        # Reset the send-counter if applicable
-        if interface in _connection_send_counter:
-            if state == 'Connected':
-                _connection_send_counter[interface] = 0
-
-        if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx.ClientObject):
-
-            if serverLimit == 'One connection per IP':
-                if state == 'Connected':
-                    # Disconnect any other sockets that have connected from the same IP.
-                    # print('interface._parent.Clients=', interface._parent.Clients)
-                    # print('interface=', interface)
-                    for client in interface._parent.Clients:
-                        if client != interface:
-                            if client.IPAddress == interface.IPAddress:
-                                if debugConnectionHandler: print('Only one connection allowed per IP.\nDisconnecting client=', client)
-                                client.Disconnect()  # There is another client connected from the same IP. Disconnect it.
-
-            # Convert ClientObjects to ServerEx
-            interface = interface._parent  # This "_parent" attribute is not documented. Shhhh...
-
-        # If this is a server interface, then only report 'Disconnected' when there are no clients connected.
-        if isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
-            if len(interface.Clients) > 0:
-                state = 'Connected'
-            elif len(interface.Clients) == 0:
-                state = 'Disconnected'
-
-        if debugConnectionHandler: print('PhysicalConnectionHandler\ninterface={}\nstate={}'.format(interface, state))
-
-        # Handle the Disconnected/Offline event
-        if state in ['Disconnected', 'Offline']:
-            if isinstance(interface, extronlib.interface.EthernetClientInterface):
-                if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    if interface in _connection_status:
-                        if debugConnectionHandler: print('_PhysicalConnectionHandler Disconnected WaitReconnect.Restart()')
-                        WaitReconnect.Restart()
-
-        # Handle the Connected/Online event
-        elif state in ['Connected', 'Online']:
-            if hasattr(interface, 'OnConnected'):
-                interface.OnConnected()
-
-            if isinstance(interface, extronlib.interface.EthernetClientInterface):
-                if interface.Protocol == 'TCP':  # UDP is "connection-less"
-                    if interface in _connection_status:
-                        if debugConnectionHandler: print('_PhysicalConnectionHandler Connected WaitReconnect.Restart()')
-                        WaitReconnect.Cancel()
-
-        # If the status has changed from Connected to Disconnected or vice versa, log the change
-        if _connection_status[interface] != state:
-            if isinstance(interface, extronlib.interface.EthernetClientInterface):
-                if debugConnectionHandler: print('{}:{} {}'.format(interface.IPAddress, str(interface.IPPort), state))
-
-            elif (isinstance(interface, extronlib.device.UIDevice) or
-                      isinstance(interface, extronlib.device.ProcessorDevice)):
-                if debugConnectionHandler: print('{} {}'.format(interface.DeviceAlias, state))
-
-            elif isinstance(interface, extronlib.interface.SerialInterface):
-                if debugConnectionHandler: print('Proc {} Port {} {}'.format(interface.Host.DeviceAlias, interface.Port, state))
-
-        _NewStatus(interface, state, 'Physically')
-
-    # Assign the pysical handler appropriately
-    if isinstance(interface, extronlib.device.UIDevice):
-        interface.Online = _PhysicalConnectionHandler
-        interface.Offline = _PhysicalConnectionHandler
-
-    elif (isinstance(interface, extronlib.interface.EthernetClientInterface) or
-              isinstance(interface, extronlib.interface.SerialInterface) or
-              isinstance(interface, extronlib.interface.EthernetServerInterfaceEx)
-          ):
-        interface.Connected = _PhysicalConnectionHandler
-        interface.Disconnected = _PhysicalConnectionHandler
-
-    # Module Connection status
-    def _GetModuleCallback(interface):
-        def _module_connection_callback(command, value, qualifier):
-            if debugConnectionHandler: print('_module_connection_callback\ninterface={}\nvalue={}'.format(interface, value))
-
-            _NewStatus(interface, value, 'Logically')
-
-            if value == 'Disconnected':
-                if isinstance(interface, extronlib.interface.EthernetClientInterface):
-                    interface.Disconnect()
-
-        return _module_connection_callback
-
-    if hasattr(interface, 'SubscribeStatus'):
-        interface.SubscribeStatus('_connection_status', None, _GetModuleCallback(interface))
-
-    else:  # Does not have attribute 'SubscribeStatus'
-        if isinstance(interface, extronlib.interface.SerialInterface):
-            limit = 15  # serial data tends to get "chopped up" so this limit should be larger
-        else:
-            limit = 15
-        _AddLogicalConnectionHandling(interface, limit=limit, callback=_GetModuleCallback(interface))
-
-    # Start the connection
-    if isinstance(interface, extronlib.interface.EthernetClientInterface):
-        Wait(0.1, interface.Connect)
-    elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
-        interface.StartListen()
-
-
-# Logical Handler ***************************************************************
-_connection_send_counter = {  # interface: count
-    # count = int(), number of queries that have been send since the last Rx
-}
-_connection_callbacks = {}
-
-
-def _AddLogicalConnectionHandling(interface, limit=3, callback=None):
-    '''
-    callback should accept 3 params
-        interface > extronlib.interface.EthernetClientInterface or extronlib.interface.SerialInterface or sub-class
-        state > 'Connected' or 'Disconnected'
-    '''
-
-    if (isinstance(interface, extronlib.interface.EthernetClientInterface) or
-            isinstance(interface, SerialInterface)
-        ):
-        _connection_callbacks[interface] = callback
-
-        if interface not in _connection_send_counter:
-            _connection_send_counter[interface] = 0
-
-        # Make new send method
-        OldSend = interface.Send
-
-        def NewSend(*args, **kwargs):
-            if debugConnectionHandler: print('NewSend\n interface={}\n args={}\n kwargs={}\n count={}\n limit={}'.format(interface, args, kwargs,
-                                                                                              _connection_send_counter[
-                                                                                                  interface],
-                                                                                              limit))  # debugging
-            _connection_send_counter[interface] += 1
-
-            if callback:
-                if _connection_send_counter[interface] > limit:
-                    callback('_connection_status', 'Disconnected', None)
-
-            OldSend(*args, **kwargs)
-
-        interface.Send = NewSend
-
-        OldSendAndWait = interface.SendAndWait
-
-        def NewSendAndWait(*args, **kwargs):
-            if debugConnectionHandler: print('NewSendAndWait *args=', args, ', kwargs=', kwargs) # debugging
-
-            _connection_send_counter[interface] += 1
-
-            if callback:
-                if _connection_send_counter[interface] > limit:
-                    callback('_connection_status', 'Disconnected', None)
-
-            return OldSendAndWait(*args, **kwargs)
-
-        interface.SendAndWait = NewSendAndWait
-
-def ConnectionHandlerLogicalReset(interface):
-    '''
-    This needs to be called by the programmer when a valid command is received by the interface.
-    Usually called within ReceiveData event.
-    :param interface: extronlib.interface.* instance
-    :return:
-    '''
-    global _connection_callbacks
-    _connection_send_counter[interface] = 0
-
-    if interface in _connection_callbacks:
-        _connection_callbacks[interface]('_connection_status', 'Connected', None)
-    else:
-        # ProgramLog(
-        # 'interface {} has no connection callback\n_connection_callbacks={}\n_connection_send_counter={}'.format(
-        # interface, _connection_callbacks, _connection_send_counter), 'info')
-        pass
-
-
 # Polling Engine ****************************************************************
 class PollingEngine():
     '''
@@ -1394,7 +1194,7 @@ class VisualFeedbackHandler():
     # Class functions
     FeedbackDicts = []
 
-    def MainVisualFeedbackHandler(self, interface, command, value, qualifier):
+    def _MainVisualFeedbackHandler(self, interface, command, value, qualifier):
         # print('MainVisualFeedbackHandler(\n interface={},\n command={},\n value={},\n qualifier={})'.format(interface, command, value, qualifier))
         doCallbacks = []
         for d in self.FeedbackDicts:
@@ -1478,7 +1278,7 @@ class VisualFeedbackHandler():
         # Make the new handler so it calls the class handler with the interface parameter added
         def NewHandler(command, value, qualifier):
             # print('NewHandler(\n command={},\n value={},\n qualifier={})'.format(command, value, qualifier))
-            self.MainVisualFeedbackHandler(interface, command, value, qualifier)
+            self._MainVisualFeedbackHandler(interface, command, value, qualifier)
 
         interface.SubscribeStatus(command, qualifier, NewHandler)
         try:
@@ -1505,7 +1305,7 @@ class VisualFeedbackHandler():
         # Make the new handler so it calls the class handler with the interface parameter added
         def NewHandler(command, value, qualifier):
             # print('NewHandler(\n command={},\n value={},\n qualifier={})'.format(command, value, qualifier))
-            self.MainVisualFeedbackHandler(interface, command, value, qualifier)
+            self._MainVisualFeedbackHandler(interface, command, value, qualifier)
 
         interface.SubscribeStatus(command, qualifier, NewHandler)
         try:
@@ -1543,7 +1343,7 @@ class VisualFeedbackHandler():
         # Make the new handler so it calls the class handler with the interface parameter added
         def NewHandler(command, value, qualifier):
             # print('NewHandler(\n command={},\n value={},\n qualifier={})'.format(command, value, qualifier))
-            self.MainVisualFeedbackHandler(interface, command, value, qualifier)
+            self._MainVisualFeedbackHandler(interface, command, value, qualifier)
 
         interface.SubscribeStatus(command, qualifier, NewHandler)
         try:
@@ -1618,7 +1418,14 @@ def PrintProgramLog():
 
 
 class PersistantVariables():
+    '''
+    This class is used to easily manage non-volatile variables using the extronlib.system.File class
+    '''
     def __init__(self, filename):
+        '''
+
+        :param filename: string like 'data.json' that will be used as the file name for the File class
+        '''
         self.filename = filename
 
         if not File.Exists(filename):
@@ -1628,6 +1435,12 @@ class PersistantVariables():
             file.close()
 
     def Set(self, varName, varValue):
+        '''
+        This will save the variable to non-volatile memory with the name varName
+        :param varName: str that will be used to identify this variable in the future with .Get()
+        :param varValue: any value hashable by the json library
+        :return:
+        '''
         # load the current file
         file = File(self.filename, mode='rt')
         data = json.loads(file.read())
@@ -1642,6 +1455,11 @@ class PersistantVariables():
         file.close()
 
     def Get(self, varName):
+        '''
+        This will return the value of the variable with varName. Or None if no value is found
+        :param varName: name of the variable that was used with .Set()
+        :return:
+        '''
         # If the varName does not exist, return None
 
         # load the current file
@@ -1661,9 +1479,12 @@ class PersistantVariables():
 
 RemoteTraceServer = None
 
-
 def RemoteTrace(IPPort=1024):
-    # this method return a new print function that will print to stdout and also send to any clients connected to the server defined on port IPPort
+    '''
+    This function return a new print function that will print to stdout and also send to any clients connected to the server defined on port IPPort
+    :param IPPort: int
+    :return:
+    '''
     global RemoteTraceServer
 
     # Start a new server
@@ -1673,6 +1494,11 @@ def RemoteTrace(IPPort=1024):
         @event(RemoteTraceServer, ['Connected', 'Disconnected'])
         def RemoteTraceServerConnectEvent(client, state):
             print('Client {}:{} {}'.format(client.IPAddress, client.ServicePort, state))
+
+        HandleConnection(
+            RemoteTraceServer,
+            timeout=5*3000, # After this many seconds, a client who has not sent any data to the server will be disconnected.
+        )
 
         result = RemoteTraceServer.StartListen()
         print('RemoteTraceServer {}'.format(result))
@@ -1690,6 +1516,13 @@ def RemoteTrace(IPPort=1024):
 
 
 def toPercent(Value, Min=0, Max=100):
+    '''
+    This function will take the Value, Min and Max and return a percentage
+    :param Value: float
+    :param Min: float
+    :param Max: float
+    :return: float from 0.0 to 100.0
+    '''
     try:
         if Value < Min:
             return 0
@@ -1706,12 +1539,18 @@ def toPercent(Value, Min=0, Max=100):
 
         return Percent
     except Exception as e:
-        print(e)
+        #print(e)
         #ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'error')
         return 0
 
 
 def IncrementIP(IP):
+    '''
+    This function will take an IP and increment it by one.
+    For example: IP='192.168.254.255' will return '192.168.255.0'
+    :param IP: str like '192.168.254.254'
+    :return: str like '192.168.254.255'
+    '''
     IPsplit = IP.split('.')
 
     Oct1 = int(IPsplit[0])
@@ -1736,8 +1575,13 @@ def IncrementIP(IP):
 
 
 def is_valid_ipv4(ip):
-    """Validates IPv4 addresses.
-    """
+    '''
+    Returns True if ip is a valid IPv4 IP like '192.168.254.254'
+    Example '192.168.254.254' > return True
+    Example '192.168.254.300' > return False
+    :param ip: str like '192.168.254.254'
+    :return: bool
+    '''
     ip_split = ip.split('.')
     if len(ip_split) != 4:
         return False
@@ -1759,7 +1603,7 @@ def GetKeyFromValue(d, v):
     You give this function a value and it returns the key
     :param d: dictionary
     :param v: value within d
-    :return: first key from d that has the value = v. If v is not found in v, return None
+    :return: first key from d that has the value == v. If v is not found in v, return None
     '''
     for k in d:
         if d[k] == v:
@@ -1767,6 +1611,12 @@ def GetKeyFromValue(d, v):
 
 
 def phone_format(n):
+    '''
+    This function formats a string like a phone number
+    Example: '8006339876' > '800-633-9876'
+    :param n:
+    :return:
+    '''
     try:
         n = strip_non_numbers(n)
         return format(int(n[:-1]), ",").replace(",", "-") + n[-1]
@@ -1781,14 +1631,13 @@ def strip_non_numbers(s):
             new_s += ch
     return new_s
 
-
 class Keyboard():
     '''
-    An object that manages the keyboard buttons.
-    If a keyboard button is pressed, self.string will be updated accordingly.
+        An object that manages the keyboard buttons.
+        If a keyboard button is pressed, self.string will be updated accordingly.
 
-    This will allow the programmer to copy/paste the keyboard GUI page into their GUID project without worrying about the KeyIDs
-    '''
+        This will allow the programmer to copy/paste the keyboard GUI page into their GUID project without worrying about the KeyIDs
+        '''
 
     def __init__(self, TLP=None, KeyIDs=[], BackspaceID=None, ClearID=None, FeedbackObject=None, SpaceBarID=None,
                  ShiftID=None):
@@ -1833,7 +1682,7 @@ class Keyboard():
                 button.SetState(0)
 
             if state in ['Pressed', 'Repeated']:
-                self.deleteCharacter()
+                self.DeleteCharacter()
 
                 # Spacebar
 
@@ -1925,7 +1774,7 @@ class Keyboard():
 
             self.updateKeysShiftMode()
 
-        self.updateLabel()
+        self._updateLabel()
 
     def updateKeysShiftMode(self):
         if self.ShiftID is not None:
@@ -1961,7 +1810,7 @@ class Keyboard():
         # print('Keyboard.ClearString()')
         self.string = ''
         self.ShiftID = 'Upper'
-        self.updateLabel()
+        self._updateLabel()
 
     def AppendToString(self, character=''):
         '''
@@ -1969,18 +1818,18 @@ class Keyboard():
         '''
         # print('Keyboard.AppendToString()')
         self.string += character
-        self.updateLabel()
+        self._updateLabel()
 
-    def deleteCharacter(self):
+    def DeleteCharacter(self):
         '''
         Removes one character from the end of the string.
         '''
         # print('deleteCharacter before=',self.string)
         self.string = self.string[0:len(self.string) - 1]
         print('deleteCharacter after=', self.string)
-        self.updateLabel()
+        self._updateLabel()
 
-    def updateLabel(self):
+    def _updateLabel(self):
         '''
         Updates the TLP label with the current self.string
         '''
@@ -2020,22 +1869,24 @@ class Keyboard():
 
         # Update the TLP
         self.FeedbackObject = NewFeedbackObject
-        self.updateLabel()
+        self._updateLabel()
 
     def GetFeedbackObject(self):
         return self.FeedbackObject
 
-    def set_password_mode(self, mode):
+    def SetPasswordMode(self, mode):
         self._password_mode = mode
-
 
 # ScrollingTable ****************************************************************
 ScrollingTable_debug = False
 
 
 class ScrollingTable():
-    # helper class **************************************************************
+    # helper class Cell()**************************************************************
     class Cell():
+        '''
+        Represents a single cell in a scrolling table
+        '''
         def __init__(self, parent_table, row, col, btn=None, callback=None):
             self._parent_table = parent_table
             self._row = row
@@ -2092,7 +1943,10 @@ class ScrollingTable():
 
     # class ********************************************************************
     def __init__(self):
-
+        '''
+        This class represents a spreadsheet with many cells.
+        The cells will be filled with data and scrollable on a TLP.
+        '''
         self._header_btns = []
         self._cells = []
         self._data_rows = []  # list of dicts. each list element is a row of data. represents the full spreadsheet.
@@ -2576,6 +2430,13 @@ class ScrollingTable():
 
 # UserInput *********************************************************************
 class UserInputClass:
+    '''
+    A one-time setup of the buttons/popups and the programmer can easily grab info from the user like so:
+
+    Get an integer/float/text from the user: UserInput.get_keyboard('popupname', callback=CallbackFunction)
+    Get a calendar data as a datetime.datetime object: UserInput.get_date(**kwargs)
+    etc...
+    '''
     def __init__(self, TLP):
         self._TLP = TLP
 
@@ -2595,6 +2456,20 @@ class UserInputClass:
         maxAgendaWidth=None
 
         ):
+        '''
+        This func must be called before self.get_date()
+        :param calDayNumBtns:
+        :param calDayAgendaBtns:
+        :param calBtnNext:
+        :param calBtnPrev:
+        :param calBtnCancel:
+        :param calLblMessage:
+        :param calLblMonthYear:
+        :param calPopupName:
+        :param startDay:
+        :param maxAgendaWidth:
+        :return:
+        '''
 
         #Save args
         self._calDayNumBtns = calDayNumBtns
@@ -2677,6 +2552,17 @@ class UserInputClass:
             startMonth=None,
             startYear=None,
             ):
+        '''
+        The programmer must call self.setup_calendar() before calling this method.
+        :param popupName:
+        :param callback:
+        :param feedback_btn:
+        :param passthru:
+        :param message:
+        :param startMonth:
+        :param startYear:
+        :return:
+        '''
 
         self._calCallback=callback
 
@@ -2711,6 +2597,14 @@ class UserInputClass:
                 self._currentDatetime = dt
 
     def CalOffsetTimedelta(self, delta):
+        '''
+        Change the calendar by delta time.
+        For example if I am currently looking at info for today and I want to see next week's info,
+            I would call UserInput.CalOffsetTimedelta(datetime.timedelta(days=7))
+            This would cause the UI to update to show next weeks info.
+        :param delta: datetime.timedelta object
+        :return:
+        '''
         if self._currentDatetime is None:
             self._currentDatetime = datetime.datetime.now()
 
@@ -2719,6 +2613,10 @@ class UserInputClass:
         return self._currentDatetime
 
     def GetCalCurrentDatetime(self):
+        '''
+        return a datetime.datetime object of the info currently being displayed.
+        :return:
+        '''
         return self._currentDatetime
 
     def _GetDatetimeFromButton(self, button):
@@ -2727,6 +2625,11 @@ class UserInputClass:
                 return date
 
     def UpdateMonthDisplay(self, dt=None):
+        '''
+        The programmer can call this to update the buttons with info for the month contained in dt
+        :param dt: datetime.datetime object
+        :return:
+        '''
         if dt is None:
             dt = self.GetCalCurrentDatetime()
         self._calDisplayMonth(dt)
@@ -2794,7 +2697,19 @@ class UserInputClass:
         return result
 
     def GetAgendaFromDatetime(self, date):
-        #returns list of eventDicts
+        '''
+        Returns a list of eventDicts that are happening on the date
+
+        eventDict looks like:
+        {
+        'datetime': dt, #datetime.datetime object representing the time the event is happening
+        'name': 'Name Of The Event', #str representing the name of the event
+        'meta': {'Room Number': 'Room 101'}, #dict with any custom values that the user may want to hold about the event. For example a room number.
+        }
+
+        :param date: datetime.date or datetime.datetime
+        :return: list like [{eventDict1, eventDict2, ...]
+        '''
 
         result = []
 
@@ -2809,9 +2724,25 @@ class UserInputClass:
         return result
 
     def GetAllCalendarEvents(self):
+        '''
+        eventDict looks like:
+        {
+        'datetime': dt, #datetime.datetime object representing the time the event is happening
+        'name': 'Name Of The Event', #str representing the name of the event
+        'meta': {'Room Number': 'Room 101'}, #dict with any custom values that the user may want to hold about the event. For example a room number.
+        }
+        :return: list of all eventDicts
+        '''
         return self._calEvents.copy()
 
     def AddCalendarEvent(self, dt, name, metaDict=None):
+        '''
+        Add an event to the calendar
+        :param dt: datetime.datetime
+        :param name: str
+        :param metaDict: {}
+        :return:
+        '''
         if metaDict is None:
             metaDict = {}
 
@@ -2861,7 +2792,18 @@ class UserInputClass:
                 self._calEvents.append(loadItem)
 
     def GetCalEvents(self, dt):
-        #return list of events happening at a specific datetime.datetime
+        '''
+        return list of eventDicts happening at a specific datetime.datetime
+
+        eventDict looks like:
+        {
+        'datetime': dt, #datetime.datetime object representing the time the event is happening
+        'name': 'Name Of The Event', #str representing the name of the event
+        'meta': {'Room Number': 'Room 101'}, #dict with any custom values that the user may want to hold about the event. For example a room number.
+        }
+        :param dt: datetime.datetime
+        :return: list
+        '''
         result = []
         for item in self._calEvents:
             dataDT = item['datetime']
@@ -2884,16 +2826,34 @@ class UserInputClass:
         return result
 
     def HoldThisEvent(self, eventDict):
+        '''
+        This class can hold one eventDict for the programmer.
+        :param eventDict:
+        :return:
+        '''
         self._calHeldEvent = eventDict
 
     def GetHeldEvent(self):
+        '''
+        Returns the held eventDict
+        :return: eventDict or None
+        '''
         return self._calHeldEvent
 
     def TrashHeldEvent(self):
+        '''
+        Deletes the held event from memory.
+        :return:
+        '''
         self.DeleteEvent(self._calHeldEvent)
         self._calHeldEvent = None
 
     def DeleteEvent(self, eventDict):
+        '''
+        Deletes the specified eventDict
+        :param eventDict:
+        :return:
+        '''
         if eventDict in self._calEvents:
             self._calEvents.remove(eventDict)
         else:
@@ -3079,7 +3039,7 @@ class UserInputClass:
             if self._kb_btn_message:
                 self._kb_btn_message.SetText('Please enter your text.')
 
-        self._kb_Keyboard.set_password_mode(password_mode)
+        self._kb_Keyboard.SetPasswordMode(password_mode)
 
         if text_feedback:
             self._kb_text_feedback = text_feedback  # button to show text as it is typed
@@ -3181,7 +3141,8 @@ class UserInputClass:
 # Non-global variables **********************************************************
 class NonGlobal:
     '''
-    This class could be replaced by global vars, but it makes the management and readability better
+    This class could be replaced by global vars, but this class makes the management and readability better
+    values will be lost upon power-cycle or re-upload
     '''
 
     def Set(self, name_of_value_str, value):
@@ -3193,7 +3154,12 @@ class NonGlobal:
 
 # Hash function *****************************************************************
 def hash_it(string=''):
-    '''This method takes in a string and returns a SHA512 hash of that string'''
+    '''
+    This function takes in a string and converts it to a unique hash.
+    Note: this is a one-way conversion. The value cannot be converted from hash to the original string
+    :param string:
+    :return: str
+    '''
     arbitrary_string = 'gs_tools_arbitrary_string'
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
@@ -3203,6 +3169,7 @@ class Timer:
     def __init__(self, t, func):
         '''
         This class calls self.func every t-seconds until Timer.Stop() is called.
+        It has protection from the "cant start thread" error.
         :param t: float
         :param func: callable (no parameters)
         '''
@@ -3231,7 +3198,8 @@ class Timer:
                                 pass
                             else:
                                 time.sleep(self._t)
-                            self._func()
+                            if self._run: #The .Stop() method may have been called while this loop was sleeping
+                                self._func()
                             # print('exiting loop()')
                     except Exception as e:
                         print('Error in timer func={}\n{}'.format(self._func, e))
@@ -3244,7 +3212,7 @@ class Timer:
     def ChangeTime(self, new_t):
         '''
         This method allows the user to change the timer speed on the fly.
-        :param new_t:
+        :param new_t: float
         :return:
         '''
         print('Timer.ChangeTime({})'.format(new_t))
@@ -3265,6 +3233,12 @@ class Timer:
         self.Stop()
 
 def GetDatetimeKwargs(dt):
+    '''
+    This converts a datetime.datetime object to a dict.
+    This is useful for saving a datetime.datetime object as a json string
+    :param dt: datetime.datetime
+    :return: dict
+    '''
     d = {'year':dt.year,
          'month': dt.month,
          'day': dt.day,
@@ -3276,6 +3250,9 @@ def GetDatetimeKwargs(dt):
     return d
 
 class Schedule:
+    '''
+    An easy class to call a function at a particular datetime.datetime
+    '''
     def __init__(self):
         self._wait = None
 
@@ -3312,6 +3289,803 @@ class Schedule:
                 self._func(**self._kwargs)
             else:
                 self._func()
+
+
+
+def HandleConnection(*args, **kwargs):
+    if UniversalConnectionHandler._defaultCH is None:
+        newCH = UniversalConnectionHandler()
+        UniversalConnectionHandler._defaultCH = newCH
+
+        @event(newCH, ['Connected', 'Disconnected'])
+        def newCHEvent(intf, state):
+            print('newCHEvent(interface={}, state={})'.format(intf, state))
+
+    UniversalConnectionHandler._defaultCH.maintain(*args, **kwargs)
+
+
+statusButtons = {}
+
+
+def AddStatusButton(interface, button):
+    if UniversalConnectionHandler._defaultCH is None:
+        newCH = UniversalConnectionHandler()
+        UniversalConnectionHandler._defaultCH = newCH
+
+    if interface not in statusButtons:
+        statusButtons[interface] = []
+
+    if button not in statusButtons[interface]:
+        statusButtons[interface].append(button)
+
+    @event(interface, ['Connected', 'Disconnected'])
+    def interfaceConnectionEvent(interface, state):
+        for btn in statusButtons[interface]:
+            if state in ['Connected', 'Online']:
+                btn.SetState(GREEN)
+                btn.SetText('Connected')
+            elif state in ['Disconnected', 'Offline']:
+                btn.SetState(RED)
+                btn.SetText('Disconnected')
+            else:
+                btn.SetState(WHITE)
+                btn.SetText('Error')
+
+
+class UniversalConnectionHandler:
+    _defaultCH = None
+
+    def __init__(self, filename='connection_handler.log'):
+        '''
+        :param filename: str() name of file to write connection status to
+        '''
+        self._interfaces = []
+        self._connection_status = {
+            # interface: 'Connected',
+        }
+        self._connected_callback = None  # callable
+        self._disconnected_callback = None
+
+        self._timers = {
+            # interface: Timer_obj,
+        }
+        self._connection_retry_freqs = {
+            # interface: float() #number of seconds between retrys
+        }
+        self._connection_timeouts = {
+            # interface: float() #number of seconds to timeout trying to connect
+        }
+        self._send_counters = {
+            # interface: int() #number of times data has been sent without receiving a response
+        }
+        self._disconnect_limits = {
+            # interface: int() #number of times to miss a response before triggering disconnected status
+        }
+        self._rx_handlers = {
+            # interface: function #function must take 2 params, "interface" object and "data" bytestring
+        }
+        self._connected_handlers = {
+            # interface: function
+        }
+        self._disconnected_handlers = {
+            # interface: function
+        }
+        self._user_connected_handlers = {
+            # interface: function
+        }
+        self._user_disconnected_handlers = {
+            # interface: function
+        }
+        self._send_methods = {
+            # interface: function
+        }
+        self._send_and_wait_methods = {
+            # interface: function
+        }
+
+        self._server_listen_status = {
+            # interface: 'Listening' or 'Not Listening' or other
+        }
+
+        self._server_client_rx_timestamps = {
+            # EthernetServerInterfaceEx1: {ClientObject1A: timestamp1,
+            # ClientObject1B: timestamp2,
+            # },
+            # EthernetServerInterfaceEx2: {ClientObject2A: timestamp3,
+            # ClientObject2B: timestamp4,
+            # },
+        }
+
+        self._keep_alive_query_cmds = {
+            # interface: 'string',
+        }
+
+        self._keep_alive_query_quals = {
+            # interface: dict(),
+        }
+        self._poll_freqs = {
+            # interface: float(),
+        }
+
+        self._filename = filename
+        if not File.Exists(self._filename):
+            File(self._filename, mode='wt').close()  # Create a blank file if it doesnt exist already
+
+    def maintain(self,
+                 interface,
+                 keep_alive_query_cmd=None,
+                 keep_alive_query_qual=None,
+                 poll_freq=5, #how many seconds between polls
+                 disconnect_limit=5, #how many missed queries before a 'Disconnected' event is triggered
+                 timeout=5, #After this many seconds, a client who has not sent any data to the server will be disconnected.
+                 connection_retry_freq=5, #how many seconds after a Disconnect event to try to do Connect
+                 ):
+        '''
+        This method will maintain the connection to the interface.
+        :param interface: extronlib.interface or extron GS module with .SubscribeStatus('ConnectionStatus')
+        :param keep_alive_query: string like 'q' for extron FW query, or string like 'Power' will send interface.Update('Power')
+        :param poll_freq: float - how many seconds between polls
+        :param disconnect_limit: int - how many missed queries before a 'Disconnected' event is triggered
+        :param timeout: int - After this many seconds, a client who has not sent any data to the server will be disconnected.
+        :param connection_retry_freq: int - how many seconds after a Disconnect event to try to do Connect
+        :return:
+        '''
+        print(
+            'maintain()\ninterface={}\nkeep_alive_query_cmd="{}"\nkeep_alive_query_qual={}\npoll_freq={}\ndisconnect_limit={}\ntimeout={}\nconnection_retry_freq={}'.format(
+                interface, keep_alive_query_cmd, keep_alive_query_qual, poll_freq, disconnect_limit,
+                timeout, connection_retry_freq))
+
+        self._connection_timeouts[interface] = timeout
+        self._connection_retry_freqs[interface] = connection_retry_freq
+        self._disconnect_limits[interface] = disconnect_limit
+        self._keep_alive_query_cmds[interface] = keep_alive_query_cmd
+        self._keep_alive_query_quals[interface] = keep_alive_query_qual
+        self._poll_freqs[interface] = poll_freq
+
+        if isinstance(interface, extronlib.interface.EthernetClientInterface):
+            self._maintain_serial_or_ethernetclient(interface)
+
+        elif isinstance(interface, extronlib.interface.SerialInterface):
+            self._maintain_serial_or_ethernetclient(interface)
+
+        elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+            if interface.Protocol == 'TCP':
+                self._maintain_serverEx_TCP(interface)
+            else:
+                raise Exception(
+                    'This ConnectionHandler class does not support EthernetServerInterfaceEx with Protocol="UDP".\nConsider using EthernetServerInterface with Protocol="UDP" (non-EX).')
+
+        elif isinstance(interface, extronlib.interface.EthernetServerInterface):
+
+            if interface.Protocol == 'TCP':
+                raise Exception(
+                    'This ConnectionHandler class does not support EthernetServerInterface with Protocol="TCP".\nConsider using EthernetServerInterfaceEx with Protocol="TCP".')
+            elif interface.Protocol == 'UDP':
+                # The extronlib.interface.EthernetServerInterfacee with Protocol="UDP" actually works pretty good by itself. No need to do anything special :-)
+                while True:
+                    result = interface.StartListen()
+                    print(result)
+                    if result == 'Listening':
+                        break
+                    else:
+                        time.sleep(1)
+
+        else:  # Assuming a extronlib.device class
+            if hasattr(interface, 'Online'):
+                interface.Online = self._get_controlscript_connection_callback(interface)
+            if hasattr(interface, 'Offline'):
+                interface.Offline = self._get_controlscript_connection_callback(interface)
+
+    def _maintain_serverEx_TCP(self, parent):
+        #save old handlers
+        if parent not in self._user_connected_handlers:
+            self._user_connected_handlers[parent] = parent.Connected
+
+        if parent not in self. _user_disconnected_handlers:
+            self._user_disconnected_handlers[parent] = parent.Disconnected
+
+        #Create new handlers
+        parent.Connected = self._get_serverEx_connection_callback(parent)
+        parent.Disconnected = self._get_serverEx_connection_callback(parent)
+
+        def get_disconnect_undead_clients_func(parent):
+            def do_disconnect_undead_clients():
+                self._disconnect_undead_clients(parent)
+
+            return do_disconnect_undead_clients
+
+        new_timer = Timer(self._connection_timeouts[parent], get_disconnect_undead_clients_func(parent))
+        new_timer.Stop()
+
+        self._timers[parent] = new_timer
+
+        self._server_start_listening(parent)
+
+    def _server_start_listening(self, parent):
+        '''
+        This method will try to StartListen on the server. If it fails, it will retry every X seconds
+        :param interface: extronlib.interface.EthernetServerInterfaceEx or EthernetServerInterface
+        :return:
+        '''
+        if parent not in self._server_listen_status:
+            self._server_listen_status[parent] = 'Unknown'
+
+        if self._server_listen_status[parent] is not 'Listening':
+            try:
+                result = parent.StartListen()
+            except Exception as e:
+                result = 'Failed to StartListen: {}'.format(e)
+                print('StartListen on port {} failed\n{}'.format(parent.IPPort, e))
+
+            print('StartListen result=', result)
+
+            self._server_listen_status[parent] = result
+
+        if self._server_listen_status[parent] is not 'Listening':
+            # We tried to start listen but it failed.
+            # Try again in X seconds
+            def retry_start_listen():
+                self._server_start_listening(parent)
+
+            Wait(self._connection_retry_freqs[parent], retry_start_listen)
+
+        elif self._server_listen_status[parent] is 'Listening':
+            # We have successfully started the server listening
+            pass
+
+    def _maintain_serial_or_ethernetclient(self, interface):
+
+        # Add polling
+        if self._keep_alive_query_cmds[interface] is not None:
+            # For example
+            if hasattr(interface, 'Update{}'.format(self._keep_alive_query_cmds[interface])):
+
+                # Delete any old polling engine timers
+                if interface in self._timers:
+                    self._timers[interface].Stop()
+                    self._timers.pop(interface)
+
+                # Create a new polling engine timer
+                def do_poll():
+                    print('do_poll interface.Update("{}", {})'.format(self._keep_alive_query_cmds[interface],
+                                                                      self._keep_alive_query_quals[interface]))
+                    interface.Update(self._keep_alive_query_cmds[interface], self._keep_alive_query_quals[interface])
+
+                new_timer = Timer(self._poll_freqs[interface], do_poll)
+                new_timer.Stop()
+                self._timers[interface] = new_timer
+
+            else:  # assume keep_alive_query is a string like 'q' for querying extron fw
+
+                # Delete any old polling engine timers
+                if interface in self._timers:
+                    self._timers[interface].Stop()
+                    self._timers.pop(interface)
+
+                # Create a new polling engine timer
+                def do_poll():
+                    print('do_poll interface.Send({})'.format(self._keep_alive_query_cmds[interface]))
+                    interface.Send(self._keep_alive_query_cmds[interface])
+
+                new_timer = Timer(self._poll_freqs[interface], do_poll)
+                self._timers[interface] = new_timer
+
+        # Register ControlScript connection handlers
+        self._assign_new_connection_handlers(interface)
+
+        # Register module connection callback
+        if hasattr(interface, 'SubscribeStatus'):
+            interface.SubscribeStatus('ConnectionStatus', None, self._get_module_connection_callback(interface))
+            if isinstance(interface, extronlib.interface.SerialInterface):
+                self._update_connection_status_serial_or_ethernetclient(interface, 'Connected',
+                                                                        'ControlScript')  # SerialInterface ports are always 'Connected' in ControlScript
+        else:
+            # This interface is not an Extron module. We must create our own logical connection handling
+            if isinstance(interface, extronlib.interface.EthernetClientInterface) or isinstance(interface,
+                                                                                                extronlib.interface.SerialInterface):
+                self._add_logical_connection_handling_client(interface)
+            elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+                self._add_logical_connection_handling_serverEx(interface)
+
+        # At this point all connection handlers and polling engines have been set up.
+        # We can now start the connection
+        if hasattr(interface, 'Connect'):
+            if interface.Protocol == 'TCP':
+                interface.Connect(self._connection_timeouts[interface])
+                # The update_connection_status method will maintain the connection from here on out.
+
+    def _add_logical_connection_handling_client(self, interface):
+        print('_add_logical_connection_handling_client')
+
+        # Initialize the send counter to 0
+        if interface not in self._send_counters:
+            self._send_counters[interface] = 0
+
+        self._check_connection_handlers(interface)
+        self._check_send_methods(interface)
+        self._check_rx_handler_serial_or_ethernetclient(interface)
+
+        if isinstance(interface, extronlib.interface.SerialInterface):
+            # SerialInterfaces are always connected via ControlScript.
+            self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'ControlScript')
+
+    def _check_connection_handlers(self, interface):
+
+        if interface not in self._connected_handlers:
+            self._connected_handlers[interface] = None
+
+        if (interface.Connected != self._connected_handlers[interface] or
+                    interface.Disconnected != self._disconnected_handlers[interface]):
+            self._assign_new_connection_handlers(interface)
+
+    def _assign_new_connection_handlers(self, interface):
+
+        if interface not in self._connected_handlers:
+            self._connected_handlers[interface] = None
+
+        connection_handler = self._get_controlscript_connection_callback(interface)
+
+        self._connected_handlers[interface] = connection_handler
+        self._disconnected_handlers[interface] = connection_handler
+
+        interface.Connected = connection_handler
+        interface.Disconnected = connection_handler
+
+    def _check_send_methods(self, interface):
+        '''
+        This method will check the .Send and .SendAndWait methods to see if they have already been replaced with the
+            appropriate new_send that will also increment the self._send_counter
+        :param interface:
+        :return:
+        '''
+        if interface not in self._send_methods:
+            self._send_methods[interface] = None
+
+        if interface not in self._send_and_wait_methods:
+            self._send_and_wait_methods[interface] = None
+
+        current_send_method = interface.Send
+        if current_send_method != self._send_methods[interface]:
+
+            # Create a new .Send method that will increment the counter each time
+            def new_send(*args, **kwargs):
+                print('new_send args={}, kwargs={}'.format(args, kwargs))
+                self._check_rx_handler_serial_or_ethernetclient(interface)
+                self._check_connection_handlers(interface)
+
+                self._send_counters[interface] += 1
+                print('new_send send_counter=', self._send_counters[interface])
+
+                # Check if we have exceeded the disconnect limit
+                if self._send_counters[interface] > self._disconnect_limits[interface]:
+                    self._update_connection_status_serial_or_ethernetclient(interface, 'Disconnected', 'Logical')
+
+                current_send_method(*args, **kwargs)
+
+            interface.Send = new_send
+
+        current_send_and_wait_method = interface.SendAndWait
+        if current_send_and_wait_method != self._send_and_wait_methods[interface]:
+            # Create new .SendAndWait that will increment the counter each time
+            def new_send_and_wait(*args, **kwargs):
+                print('new_send_and_wait args={}, kwargs={}'.format(args, kwargs))
+                self._check_rx_handler_serial_or_ethernetclient(interface)
+                self._check_connection_handlers(interface)
+
+                self._send_counters[interface] += 1
+                print('new_send_and_wait send_counter=', self._send_counters[interface])
+
+                # Check if we have exceeded the disconnect limit
+                if self._send_counters[interface] > self._disconnect_limits[interface]:
+                    self._update_connection_status_serial_or_ethernetclient(interface, 'Disconnected', 'Logical')
+
+                return current_send_and_wait_method(*args, **kwargs)
+
+            interface.SendAndWait = new_send_and_wait
+
+    def _check_rx_handler_serial_or_ethernetclient(self, interface):
+        '''
+        This method will check to see if the rx handler is resetting the send counter to 0. if not it will create a new rx handler and assign it to the interface
+        :param interface:
+        :return:
+        '''
+        print('_check_rx_handler')
+        if interface not in self._rx_handlers:
+            self._rx_handlers[interface] = None
+
+        current_rx = interface.ReceiveData
+        if current_rx != self._rx_handlers[interface] or current_rx == None:
+            # The Rx handler got overwritten somehow, make a new Rx and assign it to the interface and save it in self._rx_handlers
+            def new_rx(*args, **kwargs):
+                print('new_rx args={}, kwargs={}'.format(args, kwargs))
+                self._send_counters[interface] = 0
+
+                if isinstance(interface, extronlib.interface.EthernetClientInterface):
+                    if interface.Protocol == 'UDP':
+                        self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'Logical')
+
+                elif isinstance(interface, extronlib.interface.SerialInterface):
+                    self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'Logical')
+
+                if callable(current_rx):
+                    current_rx(*args, **kwargs)
+
+            self._rx_handlers[interface] = new_rx
+            interface.ReceiveData = new_rx
+        else:
+            # The current rx handler is doing its job. Moving on!
+            pass
+
+    def _add_logical_connection_handling_serverEx(self, interface):
+        pass
+
+    def _get_module_connection_callback(self, interface):
+        # generate a new function that includes the interface and the 'kind' of connection
+        def module_connection_callback(command, value, qualifier):
+            print('module_connection_callback(command={}, value={}, qualifier={}'.format(command, value, qualifier))
+            self._update_connection_status_serial_or_ethernetclient(interface, value, 'Module')
+
+        return module_connection_callback
+
+    def _get_controlscript_connection_callback(self, interface):
+        # generate a new function that includes the 'kind' of connection
+
+        #init some values
+        if interface not in self._connected_handlers:
+            self._connected_handlers[interface] = None
+
+        if interface not in self._disconnected_handlers:
+            self._disconnected_handlers[interface] = None
+
+        if interface not in self._user_connected_handlers:
+            self._user_connected_handlers[interface] = None
+
+        if interface not in self._user_disconnected_handlers:
+            self._user_disconnected_handlers[interface] = None
+
+        #Get handler
+
+        #save user Connected handler
+        if interface.Connected != self._connected_handlers[interface]:
+            # The connection handler was prob overridden in main.py. Reassign it
+            self._user_connected_handlers[interface] = interface.Connected
+        else:
+            self._user_connected_handlers[interface] = None
+
+        # save user Disconnected handler
+        if interface.Disconnected != self._disconnected_handlers[interface]:
+            # The connection handler was prob overridden in main.py. Reassign it
+            self._user_disconnected_handlers[interface] = interface.Disconnected
+        else:
+            self._user_disconnected_handlers[interface] = None
+
+        #Create the new handler
+        if (isinstance(interface, extronlib.device.ProcessorDevice) or
+                isinstance(interface, extronlib.device.UIDevice)):
+
+            def controlscript_connection_callback(intf, state):
+                # Call the UCH connection handler if applicable
+                if callable(self._connected_callback):
+                    self._connected_callback(interface, state)
+
+                # Call the main.py Connection handler if applicable
+                if state == 'Connected':
+                    if callable(self._user_connected_handlers[interface]):
+                        self._user_connected_handlers[interface](interface, state)
+                elif state == 'Disconnected':
+                    if callable(self._user_disconnected_handlers[interface]):
+                        self._user_disconnected_handlers[interface](interface, state)
+
+                self._log_connection_to_file(intf, state, kind='ControlScript')
+
+
+        elif (isinstance(interface, extronlib.interface.SerialInterface) or
+                  isinstance(interface, extronlib.interface.EthernetClientInterface)):
+
+            def controlscript_connection_callback(interface, state):
+
+                # Call the main.py Connection handler if applicable
+                if state == 'Connected':
+                    if callable(self._user_connected_handlers[interface]):
+                        self._user_connected_handlers[interface](interface, state)
+                elif state == 'Disconnected':
+                    if callable(self._user_disconnected_handlers[interface]):
+                        self._user_disconnected_handlers[interface](interface, state)
+
+                self._update_connection_status_serial_or_ethernetclient(interface, state, 'ControlScript')
+
+        return controlscript_connection_callback
+
+    def block(self, interface):
+        # this will stop this interface from communicating
+        if isinstance(interface, extronlib.interface.SerialInterface):
+            interface.ReceiveData = None
+
+        elif isinstance(interface, extronlib.interface.EthernetClientInterface):
+            interface.ReceiveData = None
+            interface.Connected = None
+            interface.Disconnected = None
+
+            if interface.Protocol == 'TCP':
+                interface.Disconnect()
+
+        elif isinstance(interface, extronlib.interface.EthernetServerInterface):
+            interface.ReceiveData = None
+            interface.Connected = None
+            interface.Disconnected = None
+
+            if interface.Protocol == 'TCP':
+                interface.Disconnect()
+
+            interface.StopListen()
+
+        elif isinstance(interface, extronlib.interface.EthernetServerInterfaceEx):
+            interface.ReceiveData = None
+            interface.Connected = None
+            interface.Disconnected = None
+
+            if interface.Protocol == 'TCP':
+                for client in interface.Clients:
+                    client.Disconnect()
+
+            interface.StopListen()
+
+    def get_connection_status(self, interface):
+        if interface not in self._interfaces:
+            raise Exception(
+                'This interface is not being handled by this ConnectionHandler object.\ninterface={}\nThis ConnectionHandler={}'.format(
+                    interface, self))
+        else:
+            return self._connection_status[interface]
+
+    def _get_serverEx_connection_callback(self, parent):
+        def controlscript_connection_callback(client, state):
+
+            if state == 'Connected':
+                if parent in self._user_connected_handlers:
+                    if callable(self._user_connected_handlers[parent]):
+                        self._user_connected_handlers[parent](client, state)
+
+            elif state == 'Disconnected':
+                if parent in self._user_disconnected_handlers:
+                    if callable(self._user_disconnected_handlers[parent]):
+                        self._user_disconnected_handlers[parent](client, state)
+
+            self._update_connection_status_server(parent, client, state, 'ControlScript')
+
+        return controlscript_connection_callback
+
+    def _update_connection_status_server(self, parent, client, state, kind=None):
+        '''
+        This method will save the connection status and trigger any events that may be associated
+        :param parent: EthernetServerInterfaceEx object
+        :param client: ClientObject
+        :param state: 'Connected' or 'Disconnected'
+        :param kind: 'ControlScript' or 'Logical'
+        :return:
+        '''
+
+        if state == 'Connected':
+            client.Parent = parent  # Add this attribute to the client object for later reference
+
+            if parent not in self._server_client_rx_timestamps:
+                self._server_client_rx_timestamps[parent] = {}
+
+            self._server_client_rx_timestamps[parent][
+                client] = time.monotonic()  # init the value to the time the connection started
+            self._check_rx_handler_serverEx(client)
+
+            if callable(self._connected_callback):
+                self._connected_callback(client, state)
+
+        elif state == 'Disconnected':
+            self._remove_client_data(client)  # remove dead sockets to prevent memory leak
+
+            if callable(self._disconnected_callback):
+                self._disconnected_callback(client, state)
+
+        self._update_serverEx_timer(parent)
+
+        self._log_connection_to_file(client, state, kind)
+
+    def _check_rx_handler_serverEx(self, client):
+        '''
+        Every time data is recieved from the client, set the timestamp
+        :param client:
+        :return:
+        '''
+        parent = client.Parent
+
+        if parent not in self._rx_handlers:
+            self._rx_handlers[parent] = None
+
+        old_rx = parent.ReceiveData
+        if self._rx_handlers[parent] != old_rx or (old_rx == None):
+            # we need to override the rx handler with a new handler that will also add the timestamp
+            def new_rx(client, data):
+                time_now = time.monotonic()
+                print('new_rx\ntime_now={}\nclient={}'.format(time_now, client))
+                self._server_client_rx_timestamps[parent][client] = time_now
+                self._update_serverEx_timer(parent)
+                old_rx(client, data)
+
+            parent.ReceiveData = new_rx
+            self._rx_handlers[parent] = new_rx
+
+    def _update_serverEx_timer(self, parent):
+        '''
+        This method will check all the time stamps and set the timer so that it will check again when the oldest client
+            is near the X minute timeout mark.
+        :param parent:
+        :return:
+        '''
+        if len(parent.Clients) > 0:
+            oldest_timestamp = None
+            for client in parent.Clients:
+                if client not in self._server_client_rx_timestamps[parent]:
+                    self._server_client_rx_timestamps[parent][client] = time.monotonic()
+
+                client_timestamp = self._server_client_rx_timestamps[parent][client]
+
+                if (oldest_timestamp is None) or client_timestamp < oldest_timestamp:
+                    oldest_timestamp = client_timestamp
+
+                print('client={}\nclient_timestamp={}\noldest_timestamp={}'.format(client, client_timestamp,
+                                                                                   oldest_timestamp))
+
+            # We now have the oldest timestamp, thus we know when we should check the client again
+            seconds_until_timer_check = self._connection_timeouts[parent] - (time.monotonic() - oldest_timestamp)
+            self._timers[parent].ChangeTime(seconds_until_timer_check)
+            self._timers[parent].Start()
+
+            # Lets say the parent timeout is 5 minutes.
+            # If the oldest connected client has not communicated for 4min 55sec, then seconds_until_timer_check = 5 seconds
+            # The timer will check the clients again in 5 seconds.
+            # Assuming the oldest client still has no communication, it will be disconnected at the 5 minute mark exactly
+
+        else:  # there are no clients connected
+            self._timers[parent].Stop()
+
+    def _disconnect_undead_clients(self, parent):
+        for client in parent.Clients:
+            client_timestamp = self._server_client_rx_timestamps[parent][client]
+            if time.monotonic() - client_timestamp > self._connection_timeouts[parent]:
+                if client in parent.Clients:
+                    client.Send('Disconnecting due to inactivity for {} seconds.\r\nBye.\r\n'.format(
+                        self._connection_timeouts[parent]))
+                    client.Disconnect()
+                self._remove_client_data(client)
+
+    def _remove_client_data(self, client):
+        # remove dead sockets to prevent memory leak
+        self._server_client_rx_timestamps.pop(client, None)
+
+    def _log_connection_to_file(self, interface, state, kind):
+        # Write new status to a file
+        with File(self._filename, mode='at') as file:
+            write_str = '{}\n    {}:{}\n'.format(time.asctime(), 'type', type(interface))
+
+            for att in [
+                'IPAddress',
+                'IPPort',
+                'DeviceAlias',
+                'Port',
+                'Host',
+                'ServicePort',
+                'Protocol',
+            ]:
+                if hasattr(interface, att):
+                    write_str += '    {}:{}\n'.format(att, getattr(interface, att))
+
+                    if att == 'Host':
+                        write_str += '    {}:{}\n'.format('Host.DeviceAlias', getattr(interface, att).DeviceAlias)
+
+            write_str += '    {}:{}\n'.format('ConnectionStatus', state)
+            write_str += '    {}:{}\n'.format('Kind', kind)
+
+            file.write(write_str)
+
+    def _update_connection_status_serial_or_ethernetclient(self, interface, state, kind=None):
+        '''
+        This method will save the connection status and trigger any events that may be associated
+        :param interface:
+        :param state:
+        :param kind: str() 'ControlScript' or 'Module' or any other value that may be applicable
+        :return:
+        '''
+        print('_update_connection_status\ninterface={}\nstate={}\nkind={}'.format(interface, state, kind))
+        if interface not in self._connection_status:
+            self._connection_status[interface] = 'Unknown'
+
+        if state == 'Connected':
+            self._send_counters[interface] = 0
+
+        if state != self._connection_status[interface]:
+            # The state has changed. Do something with that change
+
+            print('Connection status has changed for interface={} from "{}" to "{}"'.format(interface,
+                                                                                            self._connection_status[
+                                                                                                interface], state))
+            if callable(self._connected_callback):
+                self._connected_callback(interface, state)
+
+            self._log_connection_to_file(interface, state, kind)
+
+        # save the state for later
+        self._connection_status[interface] = state
+
+        # if the interface is disconnected, try to reconnect
+        if state == 'Disconnected':
+            print('Trying to Re-connect to interface={}'.format(interface))
+            if hasattr(interface, 'Connect'):
+                Wait(self._connection_retry_freqs[interface], interface.Connect)
+
+        # Start/Stop the polling timer if it exists
+        if interface in self._timers:
+            if state == 'Connected':
+                self._timers[interface].Start()
+
+            elif state == 'Disconnected':
+                if isinstance(interface, extronlib.interface.SerialInterface):
+                    # SerialInterface has no Disconnect() method so the polling engine is the only thing that can detect a re-connect.
+                    # Keep the timer going.
+                    pass
+                elif isinstance(interface, extronlib.interface.EthernetClientInterface):
+                    if interface.Protocol == 'UDP':
+                        # Same for UDP EthernetClientInterface
+                        # Keep the timer going.
+                        pass
+                    elif interface.Protocol == 'TCP':
+                        self._timers[interface].Stop()
+                        # Stop the timer and wait for a 'Connected' Event
+
+    def __str__(self):
+        s = '''{}\n\n***** Interfaces being handled *****\n\n'''.format(self)
+
+        for interface in self._interfaces:
+            s += self._interface_to_str(interface)
+
+    def _interface_to_str(self, interface):
+        write_str = '{}\n'.format(self)
+
+        for att in [
+            'IPAddress',
+            'IPPort',
+            'DeviceAlias',
+            'Port',
+            'Host',
+            'ServicePort',
+        ]:
+            if hasattr(interface, att):
+                write_str += '    {}:{}\n'.format(att, getattr(interface, att))
+            write_str += '    {}:{}'.format('Connection Status', self._connection_status[interface])
+
+        return write_str
+
+    @property
+    def Connected(self):
+        '''
+        There will be a single callback that will pass two params, the interface and the state
+        :return:
+        '''
+        return self._connected_callback
+
+    @Connected.setter
+    def Connected(self, callback):
+        self._connected_callback = callback
+
+    @property
+    def Disconnected(self):
+        '''
+        There will be a single callback that will pass two params, the interface and the state
+        :return:
+        '''
+        return self._disconnected_callback
+
+    @Disconnected.setter
+    def Disconnected(self, callback):
+        self._disconnected_callback = callback
+
 
 
 print('End  GST')

@@ -612,6 +612,7 @@ class Exchange():
                                 <t:BaseShape>IdOnly</t:BaseShape>
                                 <t:AdditionalProperties>
                                   <t:FieldURI FieldURI="item:Attachments" />
+                                  <t:FieldURI FieldURI="item:HasAttachments" />
                                 </t:AdditionalProperties>
                               </m:ItemShape>
                               <m:ItemIds>
@@ -621,8 +622,10 @@ class Exchange():
                           </soap:Body>
                         </soap:Envelope>""".format(self.soapHeader, itemID)
 
-        request = self.httpRequest(xmlBody)
-        attachmentList = regExAttKey.findall(request)
+        response = self.httpRequest(xmlBody)
+        print('getAttachment response=', response)
+        attachmentList = regExAttKey.findall(response)
+        print('attachmentList=', attachmentList)
         return self._attachmentHelper(attachmentList)
 
     # ----------------------------------------------------------------------------------------------------------------------

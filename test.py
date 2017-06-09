@@ -12,12 +12,7 @@ exchange.UpdateCalendar()
 #print(exchange.GetWeekData())
 print()
 
-eventDict = exchange.GetMeetingData('Tue', '5:30PM')
-print('eventDict=', eventDict)
+print(exchange.GetMeetingData('Fri', '10:00AM'))
 
-path = 'C:\\Users\\gmiller\\Desktop\\Grants GUIs\\GS Modules\\SMD Manager\\test.data'
-exchange.GetEventAttachment(
-    eventDict['ItemId'],
-    eventDict['ChangeKey'],
-    path,
-)
+contentDict = exchange.GetMeetingAttachment('Fri', '10:00AM')
+print('contentDict=', contentDict)

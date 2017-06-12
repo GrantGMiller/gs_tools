@@ -1,20 +1,3 @@
-'''
-Grant Miller
-gmiller@extron.com
-800-633-9876 x6032
-Aug 10, 2016
-'''
-
-## Begin ControlScript Import --------------------------------------------------
-from extronlib import event, Version
-from extronlib.device import ProcessorDevice, UIDevice
-from extronlib.interface import EthernetClientInterface, \
-    EthernetServerInterface, SerialInterface, IRInterface, RelayInterface, \
-    ContactInterface, DigitalIOInterface, FlexIOInterface, SWPowerInterface, \
-    VolumeInterface
-from extronlib.ui import Button, Knob, Label, Level
-from extronlib.system import Clock, MESet, Wait
-
 
 class Keyboard():
     '''
@@ -36,53 +19,56 @@ class Keyboard():
 
         self.TextFields = {}  # Format: {FeedbackObject : 'Text'}, this keeps track of the text on various Label objects.
 
-        self.bDelete = Button(TLP, BackspaceID, holdTime=0.1, repeatTime=0.1)
+        self.bDelete = extronlib.ui.Button(TLP, BackspaceID, holdTime=0.2, repeatTime=0.1)
 
         self.string = ''
 
-        self.CapsLock = False
+        self.CapsLock = True  # default caps lock setting at boot-up
         self.ShiftMode = 'Upper'
+        self._password_mode = False
 
         # Clear Key
         if ClearID is not None:
-            self.bClear = Button(TLP, ClearID)
+            self.bClear = extronlib.ui.Button(TLP, ClearID)
 
             @event(self.bClear, 'Pressed')
             def clearPressed(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 self.ClearString()
 
         # Delete key
         @event(self.bDelete, 'Pressed')
+        @event(self.bDelete, 'Tapped')
         @event(self.bDelete, 'Repeated')
         @event(self.bDelete, 'Released')
         def deletePressed(button, state):
-            print(button.Name, state)
+            # print(button.Name, state)
             if state == 'Pressed':
                 button.SetState(1)
 
-            elif state == 'Released':
+            elif state in ['Tapped', 'Released']:
                 button.SetState(0)
 
-            self.deleteCharacter()
+            if state in ['Pressed', 'Repeated']:
+                self.deleteCharacter()
 
-            # Spacebar
+                # Spacebar
 
         if SpaceBarID is not None:
-            @event(Button(TLP, SpaceBarID), 'Pressed')
+            @event(extronlib.ui.Button(TLP, SpaceBarID), 'Pressed')
             def SpacePressed(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 self.AppendToString(' ')
 
         # Character Keys
         def CharacterPressed(button, state):
-            print(button.Name, state)
+            # print(button.Name, state)
             # print('Before self.CapsLock=', self.CapsLock)
             # print('Before self.ShiftMode=', self.ShiftMode)
 
             if state == 'Pressed':
                 button.SetState(1)
-                Char = button.Name.replace('ButtonKeyboard', '')
+                Char = button.Name
 
                 if ShiftID is not None:
                     if self.ShiftMode == 'Upper':
@@ -104,21 +90,21 @@ class Keyboard():
                 # print('After self.ShiftMode=', self.ShiftMode)
 
         for ID in KeyIDs:
-            NewButton = Button(TLP, ID)
+            NewButton = extronlib.ui.Button(TLP, ID)
             NewButton.Pressed = CharacterPressed
             NewButton.Released = CharacterPressed
             self.KeyButtons.append(NewButton)
 
         # Shift Key
         if ShiftID is not None:
-            self.ShiftKey = Button(TLP, ShiftID, holdTime=1)
+            self.ShiftKey = extronlib.ui.Button(TLP, ShiftID, holdTime=1)
 
             @event(self.ShiftKey, 'Pressed')
             @event(self.ShiftKey, 'Tapped')
             @event(self.ShiftKey, 'Held')
             @event(self.ShiftKey, 'Released')
             def ShiftKeyEvent(button, state):
-                print(button.Name, state)
+                # print(button.Name, state)
                 # print('Before self.CapsLock=', self.CapsLock)
                 # print('Before self.ShiftMode=', self.ShiftMode)
 
@@ -159,22 +145,23 @@ class Keyboard():
         self.updateLabel()
 
     def updateKeysShiftMode(self):
-        if self.ShiftMode == 'Upper':
-            self.ShiftKey.SetState(1)
+        if self.ShiftID is not None:
+            if self.ShiftMode == 'Upper':
+                self.ShiftKey.SetState(1)
 
-        elif self.ShiftMode == 'Lower':
-            self.ShiftKey.SetState(0)
+            elif self.ShiftMode == 'Lower':
+                self.ShiftKey.SetState(0)
 
-        for button in self.KeyButtons:
-            Char = button.Name.replace('ButtonKeyboard', '')
+            for button in self.KeyButtons:
+                Char = button.Name
+                if Char:
+                    if self.ShiftID is not None:
+                        if self.ShiftMode == 'Upper':
+                            Char = Char.upper()
+                        else:
+                            Char = Char.lower()
 
-            if self.ShiftID is not None:
-                if self.ShiftMode == 'Upper':
-                    Char = Char.upper()
-                else:
-                    Char = Char.lower()
-
-                button.SetText(Char)
+                        button.SetText(Char)
 
     # Define the class methods
     def GetString(self):
@@ -190,6 +177,7 @@ class Keyboard():
         '''
         # print('Keyboard.ClearString()')
         self.string = ''
+        self.ShiftID = 'Upper'
         self.updateLabel()
 
     def AppendToString(self, character=''):
@@ -214,8 +202,23 @@ class Keyboard():
         Updates the TLP label with the current self.string
         '''
         # print('updateLabel()')
-        self.FeedbackObject.SetText(self.GetString())
-        print('self.FeedbackObject=', self.FeedbackObject)
+        if self._password_mode:
+            pw_string = ''
+            for ch in self.GetString():
+                pw_string += '*'
+            if self.FeedbackObject:
+                self.FeedbackObject.SetText(pw_string)
+        else:
+            if self.FeedbackObject:
+                self.FeedbackObject.SetText(self.GetString())
+                # print('self.FeedbackObject=', self.FeedbackObject)
+
+        if len(self.GetString()) == 0:
+            if self.bClear.Visible:
+                self.bClear.SetVisible(False)
+        else:
+            if not self.bClear.Visible:
+                self.bClear.SetVisible(True)
 
     def SetFeedbackObject(self, NewFeedbackObject):
         '''
@@ -239,4 +242,6 @@ class Keyboard():
     def GetFeedbackObject(self):
         return self.FeedbackObject
 
+    def set_password_mode(self, mode):
+        self._password_mode = mode
 

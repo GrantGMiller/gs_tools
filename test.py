@@ -1,5 +1,5 @@
 import exchange_interface 
-testCalendar = exchange_interface.Exchange(
+exchange = exchange_interface.Exchange(
     server='outlook.office365.com',
     username='z-365-confrm1.1@extron.com',
     password='Extron1025',
@@ -8,7 +8,11 @@ testCalendar = exchange_interface.Exchange(
     daylightSaving=True,
     impersonation=None,
     )
-testCalendar.UpdateCalendar()
-print(testCalendar.GetWeekData())
+exchange.UpdateCalendar()
+#print(exchange.GetWeekData())
 print()
-print('Tue at 5PM:', testCalendar.GetMeetingData('Tue', '5:00PM'))
+
+print(exchange.GetMeetingData('Fri', '10:00AM'))
+
+contentDict = exchange.GetMeetingAttachment('Fri', '10:00AM')
+print('\ncontentDict=', contentDict)

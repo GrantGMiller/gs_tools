@@ -11,7 +11,7 @@ import datetime, copy
 
     2017-06-06
     Added ability to get calendar attachments and save them to local file system
-    
+
     2017-06-07 - Joel Lasher
     Created GetMeetingAttachment which returns the contents of a meeting attachment
 
@@ -584,18 +584,17 @@ class Exchange():
 
             request = self.httpRequest(xmlBody)
             responseCode = regExReponse.search(request).group(1)
-            if responseCode == 'NoError': # Handle errors sent by the server
+            if responseCode == 'NoError':  # Handle errors sent by the server
                 itemName = regExName.search(request).group(1)
                 itemContent = regExContent.search(request).group(1)
                 itemContentType = regExContentType.search(request).group(1)
-                attData['Attachment{}'.format(i+1)] = {'Name':'{}'.format(itemName),
-                                                       'Content-Type':'{}'.format(itemContentType),
-                                                       'Content':'{}'.format(itemContent)}
+                attData['Attachment{}'.format(i + 1)] = {'Name': '{}'.format(itemName),
+                                                         'Content-Type': '{}'.format(itemContentType),
+                                                         'Content': '{}'.format(itemContent)}
             else:
                 print('An error occurred requesting the attachment: {}'.format(responseCode))
                 return
         return attData
-
 
     def getAttachment(self, itemID):
         regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
@@ -613,6 +612,8 @@ class Exchange():
                                 <t:BaseShape>IdOnly</t:BaseShape>
                                 <t:AdditionalProperties>
                                   <t:FieldURI FieldURI="item:Attachments" />
+                                  <t:FieldURI FieldURI="item:HasAttachments" />
+                                  <t:FieldURI FieldURI="item:ItemClass" />
                                 </t:AdditionalProperties>
                               </m:ItemShape>
                               <m:ItemIds>
@@ -622,11 +623,11 @@ class Exchange():
                           </soap:Body>
                         </soap:Envelope>""".format(self.soapHeader, itemID)
 
-        request = self.httpRequest(xmlBody)
-        attachmentList = regExAttKey.findall(request)
+        response = self.httpRequest(xmlBody)
+        print('getAttachment response=', response)
+        attachmentList = regExAttKey.findall(response)
+        print('attachmentList=', attachmentList)
         return self._attachmentHelper(attachmentList)
-
-
 
     # ----------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------

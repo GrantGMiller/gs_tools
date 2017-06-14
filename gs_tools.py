@@ -24,8 +24,6 @@ debug = True
 if not debug:
     print = lambda *args, **kwargs: None
 
-debugConnectionHandler = False
-
 # *******************************************************************************
 
 # extronlib.ui *****************************************************************
@@ -3353,7 +3351,7 @@ class UniversalConnectionHandler:
                  keep_alive_query_qual=None,
                  poll_freq=5, #how many seconds between polls
                  disconnect_limit=5, #how many missed queries before a 'Disconnected' event is triggered
-                 timeout=5, #After this many seconds, a client who has not sent any data to the server will be disconnected.
+                 timeout=5*60, #After this many seconds, a client who has not sent any data to the server will be disconnected.
                  connection_retry_freq=5, #how many seconds after a Disconnect event to try to do Connect
                  ):
         '''
@@ -3547,7 +3545,8 @@ class UniversalConnectionHandler:
             self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'ControlScript')
 
     def _check_connection_handlers(self, interface):
-
+        print('UCH._check_connection_handlers')
+        #if the user made their own connection handler, make sure our connection handler is called first
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
@@ -3556,11 +3555,11 @@ class UniversalConnectionHandler:
             self._assign_new_connection_handlers(interface)
 
     def _assign_new_connection_handlers(self, interface):
-
+        print('UCH._assign_new_connection_handlers')
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
-        connection_handler = self._get_controlscript_connection_callback(interface)
+        connection_handler = self._get_controlscript_connection_callback(interface) #This line also saves the current user handlers
 
         self._connected_handlers[interface] = connection_handler
         self._disconnected_handlers[interface] = connection_handler
@@ -3575,6 +3574,9 @@ class UniversalConnectionHandler:
         :param interface:
         :return:
         '''
+
+        self._check_connection_handlers(interface)
+
         if interface not in self._send_methods:
             self._send_methods[interface] = None
 
@@ -3592,7 +3594,7 @@ class UniversalConnectionHandler:
 
                 currentState = self.get_connection_status(interface)
                 print('currentState=', currentState)
-                if  currentState is 'Connected':
+                if currentState is 'Connected':
                     #We dont need to increment the send counter if we know we are disconnected
                     self._send_counters[interface] += 1
                 print('new_send send_counter=', self._send_counters[interface])
@@ -3631,6 +3633,7 @@ class UniversalConnectionHandler:
         :return:
         '''
         print('_check_rx_handler')
+
         if interface not in self._rx_handlers:
             self._rx_handlers[interface] = None
 
@@ -3792,10 +3795,7 @@ class UniversalConnectionHandler:
     def get_connection_status(self, interface):
         #return 'Connected' or 'Disconnected'
         #Returns None if this interface is not being handled by this UCH
-        if interface not in self._interfaces:
-            return None #
-        else:
-            return self._connection_status[interface]
+        return self._connection_status.get(interface, None)
 
     def _get_serverEx_connection_callback(self, parent):
         def controlscript_connection_callback(client, state):
@@ -3970,6 +3970,14 @@ class UniversalConnectionHandler:
 
             self._log_connection_to_file(interface, state, kind)
 
+            #Do the user's callback function
+            if state in ['Connected', 'Online']:
+                if interface in self._user_connected_handlers:
+                    self._user_connected_handlers[interface](interface, state)
+            elif state in ['Disconnected', 'Offline']:
+                if interface in self._user_disconnected_handlers:
+                    self._user_disconnected_handlers[interface](interface, state)
+
         # save the state for later
         self._connection_status[interface] = state
 
@@ -3993,7 +4001,7 @@ class UniversalConnectionHandler:
                     pass
                 elif isinstance(interface, extronlib.interface.EthernetClientInterface):
                     if interface.Protocol == 'UDP':
-                        # Same for UDP EthernetClientInterface
+                        # UDP EthernetClientInterface has no Disconnect() method so the polling engine is the only thing that can detect a re-connect.
                         # Keep the timer going.
                         pass
                     elif interface.Protocol == 'TCP':

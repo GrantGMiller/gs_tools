@@ -20,7 +20,7 @@ import datetime
 import calendar
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -684,6 +684,7 @@ class UIDevice(extronlib.device.UIDevice):
         self._PageOffset = 0 # 0 = last entry in
 
     def ShowPopup(self, popup, duration=0):
+        print('ShowPopup popup={}, duration={}'.format(popup, duration))
         self._DoShowPopup(popup, duration)
 
         if popup in self._exclusive_modals:
@@ -696,11 +697,9 @@ class UIDevice(extronlib.device.UIDevice):
             if duration is not 0:
                 if popup in self.PopupWaits:
                     self.PopupWaits[popup].Cancel()
-                    self.PopupWaits[popup].Change(duration)
-                    self.PopupWaits[popup].Restart()
-                else:
-                    NewWait = Wait(duration, lambda: self.HidePopup(popup))
-                    self.PopupWaits[popup] = NewWait
+
+                NewWait = Wait(duration, lambda: self.HidePopup(popup))
+                self.PopupWaits[popup] = NewWait
 
             for PopupName in self.PopupData:
                 if PopupName != popup:
@@ -709,6 +708,7 @@ class UIDevice(extronlib.device.UIDevice):
             self.PopupData[popup] = 'Showing'
 
     def HidePopup(self, popup):
+        print('HidePopup popup=', popup)
         super().HidePopup(popup)
 
         if popup in self.PopupWaits:
@@ -951,9 +951,6 @@ def AddTrace(InterfaceObject):
 
 # Connection handler ************************************************************
 
-_connection_status = {}
-
-
 def isConnected(interface):
     '''
     The programmer must call HandleConnection(interface) before caling isConnected(). If not this will return False always.
@@ -962,18 +959,12 @@ def isConnected(interface):
     :param interface: extronlib.interface.*
     :return: bool
     '''
-    if interface in _connection_status:
-        c = _connection_status[interface]
-        if c == 'Connected':
-            return True
-        else:
-            return False
+    state = UniversalConnectionHandler._defaultCH.get_connection_status(interface)
+    if state in ['Connected', 'Online']:
+        return True
     else:
         return False
 
-
-# Connection Handler ***************************************************************
-# Globals
 if not File.Exists('connection_handler.log'):
     file = File('connection_handler.log', mode='wt')
     file.close()
@@ -988,81 +979,6 @@ RED = 1
 WHITE = 0
 
 
-def _NewStatus(interface, state, Type='Unknown'):
-    if not interface in _connection_status:
-        _connection_status[interface] = 'Default'
-
-    oldStatus = _connection_status[interface]
-
-    if state != oldStatus:
-        # New status
-        _connection_status[interface] = state
-
-        if interface in user_physical_connection_callbacks:
-            callback = user_physical_connection_callbacks[interface]
-            callback(interface, state)
-
-        with File('connection_handler.log', mode='at') as file:
-            write_str = '{}\n    {}:{}\n'.format(time.asctime(), 'type', type(interface))
-
-            for att in [
-                'IPAddress',
-                'IPPort',
-                'DeviceAlias',
-                'Port',
-                'Host',
-                'ServicePort',
-            ]:
-                if hasattr(interface, att):
-                    write_str += '    {}:{}\n'.format(att, getattr(interface, att))
-
-            write_str += '    {}:{}\n'.format('ConnectionStatus', state)
-
-            file.write(write_str)
-
-    if interface in StatusButtons:
-        btnList = StatusButtons[interface]
-        for btn in btnList:
-            if state in ['Connected', 'Online']:
-                btn.SetState(GREEN)
-                btn.SetText('Connected')
-            elif state in ['Disconnected', 'Offline']:
-                btn.SetState(RED)
-                btn.SetText('Disconnected')
-            else:
-                btn.SetState(WHITE)
-                btn.SetText('Error')
-
-
-StatusButtons = {}
-
-
-def AddStatusButton(interface, btn):
-    if interface not in StatusButtons:
-        StatusButtons[interface] = []
-
-    StatusButtons[interface].append(btn)
-
-
-user_physical_connection_callbacks = {}
-
-
-def AddConnectionCallback(interface, callback):
-    user_physical_connection_callbacks[interface] = callback
-
-
-_server_timeout_counters = {  # TODO - implement into HandleConnection
-    # extronlib.EthernetServerInterfaceEx.ClientObject : float(lastCommTime),
-}
-
-
-def RemoveConnectionHandlers(interface):
-    print('RemoveConnectionHandlers\n interface={}'.format(interface))
-    interface.Connected = None
-    interface.Disconnected = None
-    if interface in _connection_status:
-        _connection_status.pop(interface)
-    print('_connection_status=', _connection_status)
 
 # Polling Engine ****************************************************************
 class PollingEngine():
@@ -2342,7 +2258,7 @@ class ScrollingTable():
         # We now have all the row values in all_values
         try:
             all_values.sort()  # Sort them
-        except exception as e:
+        except Exception as e:
             print('ScrollingTable.sort_by_column ERROR\n {}'.format(e))
 
         # We now have all the values sorted, but there may be duplicats
@@ -3303,9 +3219,29 @@ def HandleConnection(*args, **kwargs):
 
     UniversalConnectionHandler._defaultCH.maintain(*args, **kwargs)
 
+def ConnectionHandlerLogicalReset(interface):
+    #for backwards compatibility mostly
+    if interface in UniversalConnectionHandler._defaultCH._send_counters:
+        UniversalConnectionHandler._defaultCH._send_counters[interface] = 0
+    pass
+
+
+def RemoveConnectionHandlers(interface):
+    print('RemoveConnectionHandlers\n interface={}'.format(interface))
+    interface.Connected = None
+    interface.Disconnected = None
+    if interface in _connection_status:
+        _connection_status.pop(interface)
+    print('_connection_status=', _connection_status)
+
+
+def AddConnectionCallback(interface, callback):
+    interface.Connected = callback
+    interface.Disconnected = callback
+
+
 
 statusButtons = {}
-
 
 def AddStatusButton(interface, button):
     if UniversalConnectionHandler._defaultCH is None:
@@ -3746,16 +3682,26 @@ class UniversalConnectionHandler:
         #Get handler
 
         #save user Connected handler
-        if interface.Connected != self._connected_handlers[interface]:
+        if isinstance(interface, extronlib.device.UIDevice) or isinstance(interface, extronlib.device.ProcessorDevice):
+            callback = getattr(interface, 'Online')
+        else:
+            callback = getattr(interface, 'Connected')
+
+        if callback != self._connected_handlers[interface]:
             # The connection handler was prob overridden in main.py. Reassign it
-            self._user_connected_handlers[interface] = interface.Connected
+            self._user_connected_handlers[interface] = callback
         else:
             self._user_connected_handlers[interface] = None
 
         # save user Disconnected handler
-        if interface.Disconnected != self._disconnected_handlers[interface]:
+        if isinstance(interface, extronlib.device.UIDevice) or isinstance(interface, extronlib.device.ProcessorDevice):
+            callback = getattr(interface, 'Offline')
+        else:
+            callback = getattr(interface, 'Disconnected')
+
+        if callback != self._disconnected_handlers[interface]:
             # The connection handler was prob overridden in main.py. Reassign it
-            self._user_disconnected_handlers[interface] = interface.Disconnected
+            self._user_disconnected_handlers[interface] = callback
         else:
             self._user_disconnected_handlers[interface] = None
 
@@ -3769,10 +3715,11 @@ class UniversalConnectionHandler:
                     self._connected_callback(interface, state)
 
                 # Call the main.py Connection handler if applicable
-                if state == 'Connected':
+                if state in ['Connected', 'Online']:
                     if callable(self._user_connected_handlers[interface]):
                         self._user_connected_handlers[interface](interface, state)
-                elif state == 'Disconnected':
+
+                elif state in ['Disconnected', 'Offline']:
                     if callable(self._user_disconnected_handlers[interface]):
                         self._user_disconnected_handlers[interface](interface, state)
 
@@ -3785,10 +3732,11 @@ class UniversalConnectionHandler:
             def controlscript_connection_callback(interface, state):
 
                 # Call the main.py Connection handler if applicable
-                if state == 'Connected':
+                if state in ['Connected', 'Online']:
                     if callable(self._user_connected_handlers[interface]):
                         self._user_connected_handlers[interface](interface, state)
-                elif state == 'Disconnected':
+
+                elif state in ['Disconnected', 'Offline']:
                     if callable(self._user_disconnected_handlers[interface]):
                         self._user_disconnected_handlers[interface](interface, state)
 
@@ -3829,6 +3777,10 @@ class UniversalConnectionHandler:
                     client.Disconnect()
 
             interface.StopListen()
+
+        elif isinstance(interface, extronlib.device.UIDevice) or isinstance(interface, extronlib.device.ProcessorDevice):
+            interface.Online =  None
+            interface.Offline = None
 
     def get_connection_status(self, interface):
         if interface not in self._interfaces:
@@ -3997,7 +3949,7 @@ class UniversalConnectionHandler:
         if interface not in self._connection_status:
             self._connection_status[interface] = 'Unknown'
 
-        if state == 'Connected':
+        if state in ['Connected', 'Online']:
             self._send_counters[interface] = 0
 
         if state != self._connection_status[interface]:
@@ -4022,10 +3974,10 @@ class UniversalConnectionHandler:
 
         # Start/Stop the polling timer if it exists
         if interface in self._timers:
-            if state == 'Connected':
+            if state in ['Connected', 'Online']:
                 self._timers[interface].Start()
 
-            elif state == 'Disconnected':
+            elif state in ['Disconnected', 'Offline']:
                 if isinstance(interface, extronlib.interface.SerialInterface):
                     # SerialInterface has no Disconnect() method so the polling engine is the only thing that can detect a re-connect.
                     # Keep the timer going.
@@ -4085,7 +4037,6 @@ class UniversalConnectionHandler:
     @Disconnected.setter
     def Disconnected(self, callback):
         self._disconnected_callback = callback
-
 
 
 print('End  GST')

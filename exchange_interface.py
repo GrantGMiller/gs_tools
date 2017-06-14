@@ -613,6 +613,7 @@ class Exchange():
                                 <t:BaseShape>IdOnly</t:BaseShape>
                                 <t:AdditionalProperties>
                                   <t:FieldURI FieldURI="item:Attachments" />
+                                  <t:FieldURI FieldURI="item:HasAttachments" />
                                 </t:AdditionalProperties>
                               </m:ItemShape>
                               <m:ItemIds>

@@ -306,6 +306,39 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             if self._keep_alive_Timer is not None:
                 self._keep_alive_Timer.Stop()
 
+    def Send(self, data):
+        # Send data in chunks.
+        chunkSize = 512
+        numberOfChunks = int(len(data) / chunkSize) + 1
+        ##print('NumberOfChunks=', NumberOfChunks)
+        lastPrint = 0
+        for i in range(numberOfChunks):
+            if numberOfChunks > 1:
+                if i % 1000 == 0:
+                    percent = int((i/numberOfChunks)*100)
+                    if percent > lastPrint:
+                        lastPrint = percent
+                        print('Sending in chunks: {}%'.format(lastPrint))
+            ##print('Sending Chunk', i)
+            StartIndex = i * chunkSize
+            EndIndex = (i + 1) * chunkSize
+
+            if EndIndex > len(data):
+                Chunk = data[StartIndex:]
+            else:
+                Chunk = data[StartIndex:EndIndex]
+
+            try:
+                self._ChunkSend(Chunk)
+                ##print('Chunk', i, '=', Chunk)
+                #time.sleep(0.001)  # make sure chunks are received in order
+                pass
+            except Exception as e:
+                print(e)
+
+    def _ChunkSend(self, data):
+        super.Send(data)
+
 def get_parent(client_obj):
     '''
     This function is used to get the parent EthernetServerInterfaceEx from a ClientObject

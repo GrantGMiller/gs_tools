@@ -889,6 +889,8 @@ class VolumeHandler():
             elif button == BtnDown:
                 NewLevel = CurrentLevel - stepSize
 
+            if LvlFakeFeedback is not None:
+                LvlFakeFeedback.SetLevel(NewLevel)
             Interface.Set(GainCommand, NewLevel, GainQualifier)
 
         if BtnMute:

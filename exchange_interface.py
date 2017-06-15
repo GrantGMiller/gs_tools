@@ -240,9 +240,9 @@ class Exchange():
         # gets the latest data for this week from exchange and stores it internally
 
         # Regular Expressions for finding events
-        regEx = re.compile(r'<t:ItemId Id=.{1,}?</t:Name>')
+        regExItemId = re.compile(r'<t:ItemId Id=.{1,}?</t:Name>')
         # Regular Expression for parsing event data
-        regExEvents = re.compile(
+        regExEventInfo = re.compile(
             r'<t:ItemId Id=\"(.{1,}?)\".{1,}<t:Subject>(.{1,}?)</t:Subject><t:Start>(.{1,}?)</t:Start><t:End>(.{1,}?)</t:End>')
         # Regular expression to find Event Organizer
         regExOrg = re.compile(r'<t:Name>(.{1,}?)</t:Name>')
@@ -285,14 +285,14 @@ class Exchange():
 
         # Pull events out of XML
         try:
-            matches = regEx.findall(request)
+            matches = regExItemId.findall(request)
 
             # Clear the calendar Data
             for days in self.calendarData:
                 for times in self.calendarData[days]['Time']:
                     self.calendarData[days]['Time'][times] = None
 
-            for match in matches:
+            for matchItemId in matches:
 
                 # Clean package to organize events into Dictionary
                 timeList = []
@@ -312,29 +312,29 @@ class Exchange():
 
                 # Sort Matches into Event information into different groups
                 # 1:Event Subject 2:StartTime 3:Endtime
-                parsedData = regExEvents.search(match)
-                pullOrganizer = regExOrg.search(match)
-                pullEventChangeKey = regExCKey.search(match)
+                matchEventInfo = regExEventInfo.search(matchItemId)
+                matchOrginization = regExOrg.search(matchItemId)
+                matchChangeKey = regExCKey.search(matchItemId)
 
                 # PackageBuilder and Added to Dictionary
-                package['Name'] = parsedData.group(2)
-                package['Organizer'] = pullOrganizer.group(1)
-                package['Event_ID'] = parsedData.group(1)
-                package['Event_CKey'] = pullEventChangeKey.group(1)
+                package['Name'] = matchEventInfo.group(2)
+                package['Organizer'] = matchOrginization.group(1)
+                package['Event_ID'] = matchEventInfo.group(1)
+                package['Event_CKey'] = matchChangeKey.group(1)
 
-                workingStarttime = datetime.datetime(year=int(parsedData.group(3)[0:4]),
-                                                     month=int(parsedData.group(3)[5:7]),
-                                                     day=int(parsedData.group(3)[8:10]),
-                                                     hour=int(parsedData.group(3)[11:13]),
-                                                     minute=(int(parsedData.group(3)[14:16]) - int(
-                                                         parsedData.group(3)[14:16]) % 30)) - self.timeZoneOffset
+                workingStarttime = datetime.datetime(year=int(matchEventInfo.group(3)[0:4]),
+                                                     month=int(matchEventInfo.group(3)[5:7]),
+                                                     day=int(matchEventInfo.group(3)[8:10]),
+                                                     hour=int(matchEventInfo.group(3)[11:13]),
+                                                     minute=(int(matchEventInfo.group(3)[14:16]) - int(
+                                                         matchEventInfo.group(3)[14:16]) % 30)) - self.timeZoneOffset
 
-                workingEndtime = datetime.datetime(year=int(parsedData.group(4)[0:4]),
-                                                   month=int(parsedData.group(4)[5:7]),
-                                                   day=int(parsedData.group(4)[8:10]),
-                                                   hour=int(parsedData.group(4)[11:13]),
-                                                   minute=int(parsedData.group(4)[14:16]) - int(
-                                                       parsedData.group(4)[14:16]) % 30) - self.timeZoneOffset
+                workingEndtime = datetime.datetime(year=int(matchEventInfo.group(4)[0:4]),
+                                                   month=int(matchEventInfo.group(4)[5:7]),
+                                                   day=int(matchEventInfo.group(4)[8:10]),
+                                                   hour=int(matchEventInfo.group(4)[11:13]),
+                                                   minute=int(matchEventInfo.group(4)[14:16]) - int(
+                                                       matchEventInfo.group(4)[14:16]) % 30) - self.timeZoneOffset
 
                 package['StartDate'] = str(workingStarttime)[0:10]
                 package['EndDate'] = str(workingEndtime)[0:10]
@@ -397,32 +397,33 @@ class Exchange():
 
                 timeList.append(package['StartTime'])
 
-                while processTime is True:
+                if package['StartTime'] != package['EndTime']:
+                    while processTime is True:
 
-                    trimCut = 0
-                    initialTime += datetime.timedelta(minutes=5)
-
-                    if int(str(initialTime.time())[0:2]) > 12:
-                        initialTime -= datetime.timedelta(hours=12)
-
-                    if str(initialTime.time())[0:5] == '12:00':
-                        if workingTag == 'AM':
-                            workingTag = 'PM'
-                        else:
-                            workingTag = 'AM'
-
-                    if str(initialTime.time())[0] == '0' and str(initialTime.time())[1] != '0':
-                        trimCut = 1
-                    else:
                         trimCut = 0
+                        initialTime += datetime.timedelta(minutes=5)
 
-                    if str(initialTime.time())[trimCut:5] + workingTag == package['EndTime']:
+                        if int(str(initialTime.time())[0:2]) > 12:
+                            initialTime -= datetime.timedelta(hours=12)
 
-                        processTime = False
-                    else:
-                        timeList.append(str(initialTime.time())[trimCut:5] + workingTag)
+                        if str(initialTime.time())[0:5] == '12:00':
+                            if workingTag == 'AM':
+                                workingTag = 'PM'
+                            else:
+                                workingTag = 'AM'
 
-                for timeslots in timeList:
+                        if str(initialTime.time())[0] == '0' and str(initialTime.time())[1] != '0':
+                            trimCut = 1
+                        else:
+                            trimCut = 0
+
+                        if str(initialTime.time())[trimCut:5] + workingTag == package['EndTime']:
+
+                            processTime = False
+                        else:
+                            timeList.append(str(initialTime.time())[trimCut:5] + workingTag)
+
+                for timeslots in timeList: #timeList is a list of str like '6:45PM'
                     self.calendarData[package['StartDay']]['Time'][timeslots] = package
 
         except Exception as e:

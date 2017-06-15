@@ -12,10 +12,11 @@ exchange = exchange_interface.Exchange(
     impersonation=None,
     )
 exchange.UpdateCalendar()
-#print(exchange.GetWeekData())
+print(exchange.GetWeekData())
 print()
 
-print(exchange.GetMeetingData('Tue', '9:00AM'))
+print('GetMeetingData=', exchange.GetMeetingData('Thu', '6:00PM'))
+print()
+contentDict = exchange.GetMeetingAttachment('Thu', '6:00PM')
 
-contentDict = exchange.GetMeetingAttachment('Tue', '9:00AM')
-print('\ncontentDict=', contentDict)
+#print('\ncontentDict=', contentDict)

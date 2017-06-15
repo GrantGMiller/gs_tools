@@ -845,6 +845,10 @@ class VolumeHandler():
                  GainQualifier=None,
                  MuteCommand=None,
                  MuteQualifier=None,
+
+                 LvlFakeFeedback=None,
+                 LvlMax=None,
+                 LvlMin=None,
                  ):
         '''
 
@@ -863,11 +867,22 @@ class VolumeHandler():
         BtnUp._repeatTime = repeatTime
         BtnDown._repeatTime = repeatTime
 
+        if LvlMax is None:
+            LvlMax = 100
+        if LvlMin is None:
+            LvlMin = 0
+
+        if LvlFakeFeedback is not None:
+            LvlFakeFeedback.SetRange(LvlMin, LvlMax, stepSize)
+
         @event([BtnUp, BtnDown], ['Pressed', 'Repeated'])
         def BtnUpDownEvent(button, state):
-            CurrentLevel = Interface.ReadStatus(GainCommand, GainQualifier)
-            if CurrentLevel is None:
-                CurrentLevel = -100
+            if LvlFakeFeedback is None:
+                CurrentLevel = Interface.ReadStatus(GainCommand, GainQualifier)
+                if CurrentLevel is None:
+                    CurrentLevel = -100
+            else:
+                CurrentLevel = LvlFakeFeedback.Level
 
             if button == BtnUp:
                 NewLevel = CurrentLevel + stepSize
@@ -1109,12 +1124,13 @@ class VisualFeedbackHandler():
     FeedbackDicts = []
 
     def _MainVisualFeedbackHandler(self, interface, command, value, qualifier):
-        # print('MainVisualFeedbackHandler(\n interface={},\n command={},\n value={},\n qualifier={})'.format(interface, command, value, qualifier))
+        #print('MainVisualFeedbackHandler(\n interface={},\n command={},\n value={},\n qualifier={})'.format(interface, command, value, qualifier))
         doCallbacks = []
         for d in self.FeedbackDicts:
             if d['interface'] == interface:
                 if d['command'] == command:
                     if d['qualifier'] == qualifier:
+                        #print('matched d=', d)
                         obj = d['feedbackObject']
                         if 'value' in d:
 
@@ -1146,7 +1162,7 @@ class VisualFeedbackHandler():
                                             else:
                                                 obj.SetState(state)
 
-                        elif isinstance(obj, Level):
+                        elif isinstance(obj, extronlib.ui.Level):
                             obj.SetLevel(int(value))
 
                         # Do the callback if it exist
@@ -3241,7 +3257,7 @@ def AddConnectionCallback(interface, callback):
 
 statusButtons = {}
 
-def AddStatusButton(interface, button):
+def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
     if UniversalConnectionHandler._defaultCH is None:
         newCH = UniversalConnectionHandler()
         UniversalConnectionHandler._defaultCH = newCH
@@ -3973,10 +3989,12 @@ class UniversalConnectionHandler:
             #Do the user's callback function
             if state in ['Connected', 'Online']:
                 if interface in self._user_connected_handlers:
-                    self._user_connected_handlers[interface](interface, state)
+                    if callable(self._user_connected_handlers[interface]):
+                        self._user_connected_handlers[interface](interface, state)
             elif state in ['Disconnected', 'Offline']:
                 if interface in self._user_disconnected_handlers:
-                    self._user_disconnected_handlers[interface](interface, state)
+                    if callable(self._user_disconnected_handlers[interface]):
+                        self._user_disconnected_handlers[interface](interface, state)
 
         # save the state for later
         self._connection_status[interface] = state

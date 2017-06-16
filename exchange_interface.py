@@ -35,7 +35,9 @@ fType = {'video/mp4': '.mp4',
          'text/plain': '.txt',
          'text/xml': '.xml',
          # ...
-         'audio/mp4': '.mp4'}
+         'audio/mp4': '.mp4',
+         'video/mp4': '.mp4',
+         }
 
 fName = 'myfile.{}'.format(fType.get(attType))
 f = open(fName, 'wb')
@@ -423,7 +425,7 @@ class Exchange():
                         else:
                             timeList.append(str(initialTime.time())[trimCut:5] + workingTag)
 
-                for timeslots in timeList: #timeList is a list of str like '6:45PM'
+                for timeslots in timeList:  # timeList is a list of str like '6:45PM'
                     self.calendarData[package['StartDay']]['Time'][timeslots] = package
 
         except Exception as e:
@@ -585,18 +587,17 @@ class Exchange():
 
             request = self.httpRequest(xmlBody)
             responseCode = regExReponse.search(request).group(1)
-            if responseCode == 'NoError': # Handle errors sent by the server
+            if responseCode == 'NoError':  # Handle errors sent by the server
                 itemName = regExName.search(request).group(1)
                 itemContent = regExContent.search(request).group(1)
                 itemContentType = regExContentType.search(request).group(1)
-                attData['Attachment{}'.format(i+1)] = {'Name':'{}'.format(itemName),
-                                                       'Content-Type':'{}'.format(itemContentType),
-                                                       'Content':'{}'.format(itemContent)}
+                attData['Attachment{}'.format(i + 1)] = {'Name': '{}'.format(itemName),
+                                                         'Content-Type': '{}'.format(itemContentType),
+                                                         'Content': '{}'.format(itemContent)}
             else:
                 print('An error occurred requesting the attachment: {}'.format(responseCode))
                 return
         return attData
-
 
     def getAttachment(self, itemID):
         regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
@@ -628,8 +629,6 @@ class Exchange():
         print(request)
         attachmentList = regExAttKey.findall(request)
         return self._attachmentHelper(attachmentList)
-
-
 
     # ----------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------
@@ -715,3 +714,41 @@ class Exchange():
             return self.getAttachment(self.calendarData[day]['Time'][time]['Event_ID'])
         else:
             return None
+
+    def GetNextEventDatetime(self):
+
+        weekDayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+                        'Sun', ]  # TODO: may need to reconsider this assumption
+        nowDT = datetime.datetime.now()
+        startDay = nowDT.strftime('%a')
+        startIndex = weekDayOrder.index(startDay)
+
+        weekData = self.GetWeekData().copy()
+
+        firstEventDT = None
+
+        for dayStr in weekDayOrder[startIndex:]:
+            for timeStr in weekData[dayStr]['Time']:
+                event = weekData[dayStr]['Time'][timeStr]
+                if event is not None:
+                    eventDTstring = weekData[dayStr]['Date']
+                    year, month, day = eventDTstring.split('-')
+                    year = int(year)
+                    month = int(month)
+                    day = int(day)
+
+                    hour, etc = timeStr.split(':')
+                    hour = int(hour)
+                    minute = int(etc[:2])
+                    ampm = etc[-2:]
+
+                    if ampm == 'PM' and hour is not 12:
+                        hour += 12
+
+                    eventDT = datetime.datetime(year=year, month=month, day=day, hour=hour, minute=minute)
+
+                    if eventDT > nowDT:  # The event is in the future
+                        if firstEventDT is None or eventDT < firstEventDT:
+                            firstEventDT = eventDT
+
+        return firstEventDT

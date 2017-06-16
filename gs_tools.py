@@ -308,7 +308,7 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
 
     def Send(self, data):
         # Send data in chunks.
-        chunkSize = 512
+        chunkSize = 256 #256 seems to work well on an actual IPCP
         numberOfChunks = int(len(data) / chunkSize) + 1
         ##print('NumberOfChunks=', NumberOfChunks)
         lastPrint = 0

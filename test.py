@@ -9,14 +9,11 @@ exchange = exchange_interface.Exchange(
     username=exchange_credentials.username,
     password=exchange_credentials.password,
     service='Office365',
-    timeZone="UTC-05:00",
-    daylightSaving=True,
-    impersonation=None,
 )
 
-exchange.UpdateCalendarData()
+exchange.UpdateCalendar()
 print()
-for calItem in exchange.GetMeetingData():
+for calItem in exchange.GetEventAtTime():
     print(calItem)
 
 print('GetNextCalItems')

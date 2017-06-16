@@ -2,6 +2,10 @@ import urllib.request, re
 from base64 import b64encode, b64decode
 import datetime
 import time
+try:
+    from extronlib.system import File
+except:
+    File = open
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
 offsetHours = offsetSeconds / 60 / 60 *-1
@@ -10,7 +14,7 @@ MY_TIME_ZONE = offsetHours
 print('MY_TIME_ZONE=UTC{}'.format(MY_TIME_ZONE))
 
 def ConvertTimeStringToDatetime(string):
-    print('ConvertTimeStringToDatetime\nstring=', string)
+    #print('ConvertTimeStringToDatetime\nstring=', string)
     year, month, etc = string.split('-')
     day, etc = etc.split('T')
     hour, minute, etc = etc.split(':')
@@ -44,7 +48,7 @@ def AdjustDatetimeForTimezone(dt, fromZone):
 
 
 class _CalendarItem:
-    def __init__(self, startDT, endDT, data=None):
+    def __init__(self, startDT, endDT, data, parentExchange):
         if data is None:
             data = {}
         #print('_CalendarItem data=', data)
@@ -52,6 +56,7 @@ class _CalendarItem:
         self._startDT = startDT
         self._endDT = endDT
         self._attachments = []
+        self._parentExchange = parentExchange
 
     def AddData(self, key, value):
         self._data[key] = value
@@ -85,7 +90,16 @@ class _CalendarItem:
             else:
                 return False
 
-    def HasAttachment(self):
+    def GetAttachments(self):
+        self._attachments = []
+        for attachmentID in self._parentExchange._GetAttachmentIDs(self):
+            newAttachmentObject = _Attachment(attachmentID, self._parentExchange)
+            self._attachments.append(newAttachmentObject)
+
+        return self._attachments.copy()
+
+    def HasAttachments(self):
+
         if len(self._attachments) > 0:
             return True
         else:
@@ -97,36 +111,50 @@ class _CalendarItem:
         return False
 
     def __str__(self):
-        return '<CalendarItem object: Start={}, End={}, Subject={}, HasAttachement={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachment())
+        return '<CalendarItem object: Start={}, End={}, Subject={}, HasAttachements={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachments())
 
     def __repr__(self):
         return str(self)
 
 class _Attachment:
-    def __init__(self, Filename, AttachmentId, parentExchange):
-        self.Filename = Filename
+    def __init__(self, AttachmentId, parentExchange):
+        self.Filename = None
         self.AttachmentId = AttachmentId
         self._parentExchange = parentExchange
+        self._content = None
+
+    def _Update(self):
+        self._parentExchange._UpdateAttachmentData(self)
 
     def GetContent(self):
-        pass
+        if self._content is None:
+            self._Update()
+
+        return self._content
+
+    def GetID(self):
+        return self.AttachmentId
+
+    def GetFilename(self):
+        if self.Filename is None:
+            self._Update()
+        return self.Filename
 
     def SaveToPath(self, path):
-        pass
+        with File(path, mode='wb') as file:
+            file.write(self.GetContent().encode())
 
 
 class Exchange():
 
 
     #Exchange methods
-    def __init__(self, server, username, password, service, timeZone, daylightSaving=True, impersonation=None):
+    def __init__(self, server, username, password, service):
         self.service = service
-        self.daylightSavings = daylightSaving
-        self._timeZone = timeZone
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
-        self._impersonation = impersonation
+        self._impersonation = None
         self.header = {'content-type': 'text/xml; charset=utf-8',
                        'Authorization': 'Basic {}'.format(self.login)
                        }
@@ -206,7 +234,7 @@ class Exchange():
                 self._folderID = matchFolderInfo.group(1)
                 self._changeKey = matchFolderInfo.group(2)
 
-    def UpdateCalendarData(self):
+    def UpdateCalendar(self):
         # gets the latest data for this week from exchange and stores it
 
         xmlbody = """<?xml version="1.0" encoding="utf-8"?>
@@ -282,7 +310,7 @@ class Exchange():
             startDT = ConvertTimeStringToDatetime(startTimeString)
             endDT = ConvertTimeStringToDatetime(endTimeString)
 
-            calItem = _CalendarItem(startDT, endDT, data)
+            calItem = _CalendarItem(startDT, endDT, data, self)
             self._AddCalendarItem(calItem)
 
     def _AddCalendarItem(self, calItem):
@@ -408,8 +436,9 @@ class Exchange():
 
         request = self._SendHttp(xmlBody)
 
-    def _AttachmentHelper(self, attachmentIDs):
-        # returns a list of _Attachment objects
+    def _UpdateAttachmentData(self, attachmentObject):
+        # sets the filename and content of attachment object
+        attachmentID = attachmentObject.GetID()
 
         regExReponse = re.compile(r'<m:ResponseCode>(.+)</m:ResponseCode>')
         regExName = re.compile(r'<t:Name>(.+)</t:Name>')
@@ -417,8 +446,7 @@ class Exchange():
         regExContent = re.compile(r'<t:Content>(.+)</t:Content>')
         attachmentObjects = []
 
-        for i, attachmentID in enumerate(attachmentIDs):
-            xmlBody = """<?xml version="1.0" encoding="utf-8"?>
+        xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                             <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                                            xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
                                            xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
@@ -435,24 +463,19 @@ class Exchange():
                               </soap:Body>
                             </soap:Envelope>""".format(self._soapHeader, attachmentID)
 
-            request = self._SendHttp(xmlBody)
+        request = self._SendHttp(xmlBody)
 
-            responseCode = regExReponse.search(request).group(1)
-            if responseCode == 'NoError':  # Handle errors sent by the server
-                itemName = regExName.search(request).group(1)
-                itemContent = regExContent.search(request).group(1)
-                itemContentType = regExContentType.search(request).group(1)
+        responseCode = regExReponse.search(request).group(1)
+        if responseCode == 'NoError':  # Handle errors sent by the server
+            itemName = regExName.search(request).group(1)
+            itemContent = regExContent.search(request).group(1)
 
-                newAttachementObject = _Attachment(itemName, attachmentID, self)
-                attachmentObjects.append(newAttachementObject)
+            attachmentObject._content = itemContent
+            attachmentObject.Filename = itemName
 
-            else:
-                print('An error occurred requesting the attachment: {}'.format(responseCode))
-                return
-        return attachmentObjects
 
-    def GetAttachments(self, calItem):
-        #returns a list of _Attachment objects
+    def _GetAttachmentIDs(self, calItem):
+        #returns a list of attachment IDs
 
         itemId = calItem.Get('ItemId')
         regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
@@ -482,7 +505,7 @@ class Exchange():
 
         response = self._SendHttp(xmlBody)
         attachmentIdList = regExAttKey.findall(response)
-        return self._AttachmentHelper(attachmentIdList)
+        return attachmentIdList
 
     # ----------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------
@@ -509,7 +532,7 @@ class Exchange():
     def GetAllEvents(self):
         return self._calendarItems.copy()
 
-    def GetMeetingData(self, dt=None):
+    def GetEventAtTime(self, dt=None):
         #dt = datetime.date or datetime.datetime
         # return a list of events that occur on datetime.date or at datetime.datetime
         if dt is None:
@@ -523,7 +546,7 @@ class Exchange():
 
         return events
 
-    def GetNowCalItem(self):
+    def GetNowCalItems(self):
         #returns list of calendar items happening now
 
         returnCalItems = []

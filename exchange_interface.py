@@ -245,11 +245,12 @@ class Exchange():
         regExItemId = re.compile(r'<t:ItemId Id=.{1,}?</t:Name>')
         # Regular Expression for parsing event data
         regExEventInfo = re.compile(
-            r'<t:ItemId Id=\"(.{1,}?)\".{1,}<t:Subject>(.{1,}?)</t:Subject><t:Start>(.{1,}?)</t:Start><t:End>(.{1,}?)</t:End>')
+            r'<t:ItemId Id=\"(.{1,}?)\".{1,}<t:Subject>(.{1,}?)</t:Subject><t:HasAttachments>.{4,5}</t:HasAttachments><t:Start>(.{1,}?)</t:Start><t:End>(.{1,}?)</t:End>')
         # Regular expression to find Event Organizer
         regExOrg = re.compile(r'<t:Name>(.{1,}?)</t:Name>')
         # Regular expression to fing event change key
         regExCKey = re.compile(r'ChangeKey=\"(.{1,})\"/')
+        regExHasAttachments = re.compile('\<t:HasAttachments\>(.{4,5})\</t:HasAttachments\>')
         timetag = ['AM', 'PM']
 
         self.generateWeek()
@@ -271,6 +272,7 @@ class Exchange():
                               <t:FieldURI FieldURI="calendar:Start" />
                               <t:FieldURI FieldURI="calendar:End" />
                               <t:FieldURI FieldURI="calendar:Organizer" />
+                              <t:FieldURI FieldURI="item:HasAttachments" />
                             </t:AdditionalProperties>
                           </m:ItemShape>
                           <m:CalendarView MaxEntriesReturned="100" StartDate="{1}" EndDate="{2}" />
@@ -281,20 +283,21 @@ class Exchange():
                       </soap:Body>
                     </soap:Envelope>""".format(self.soapHeader, self.startOfWeek, self.endOfWeek, self.FolderID,
                                                self.ChangeKey)
-        # Http request for events
+        # Http response for events
 
-        request = self.httpRequest(xmlbody)
-
+        response = self.httpRequest(xmlbody)
+        print('response=', response
+              )
         # Pull events out of XML
-        try:
-            matches = regExItemId.findall(request)
+        if True: #try:
+            matchesAllItems = regExItemId.findall(response)
 
             # Clear the calendar Data
             for days in self.calendarData:
                 for times in self.calendarData[days]['Time']:
                     self.calendarData[days]['Time'][times] = None
 
-            for matchItemId in matches:
+            for matchItem in matchesAllItems:
 
                 # Clean package to organize events into Dictionary
                 timeList = []
@@ -309,20 +312,27 @@ class Exchange():
                            'StartDay': '',
                            'EndDay': '',
                            'StartTime': '',
-                           'EndTime': ''
+                           'EndTime': '',
+                           'Has Attachments': False,
                            }
 
                 # Sort Matches into Event information into different groups
                 # 1:Event Subject 2:StartTime 3:Endtime
-                matchEventInfo = regExEventInfo.search(matchItemId)
-                matchOrginization = regExOrg.search(matchItemId)
-                matchChangeKey = regExCKey.search(matchItemId)
+                matchEventInfo = regExEventInfo.search(matchItem)
+                matchOrginization = regExOrg.search(matchItem)
+                matchChangeKey = regExCKey.search(matchItem)
+                matchHasAttachments = regExHasAttachments.search(matchItem)
 
                 # PackageBuilder and Added to Dictionary
                 package['Name'] = matchEventInfo.group(2)
                 package['Organizer'] = matchOrginization.group(1)
                 package['Event_ID'] = matchEventInfo.group(1)
                 package['Event_CKey'] = matchChangeKey.group(1)
+                if matchHasAttachments is not None:
+                    if 'true' in matchHasAttachments.group(1):
+                        package['Has Attachments'] = True
+                    elif 'false' in matchHasAttachments.group(1):
+                        package['Has Attachments'] = False
 
                 workingStarttime = datetime.datetime(year=int(matchEventInfo.group(3)[0:4]),
                                                      month=int(matchEventInfo.group(3)[5:7]),
@@ -428,7 +438,7 @@ class Exchange():
                 for timeslots in timeList:  # timeList is a list of str like '6:45PM'
                     self.calendarData[package['StartDay']]['Time'][timeslots] = package
 
-        except Exception as e:
+        else: #except Exception as e:
             print(e, 'Can not access Account')
 
     def startEndTimeCalc(self, duration, selectedTime=None, date=None):
@@ -701,11 +711,27 @@ class Exchange():
         # returns a dict like
         return self.calendarData
 
-    def GetMeetingData(self, day, time):
+    def GetMeetingData(self, *args):
         # return a dict of calendar event data, or return None
         # day = str like 'Mon', 'Tue', etc
         # time = str like '5:30PM'
+
+        if len(args) == 1: #probably a datetime.datetime object
+            dt = args[0]
+            if dt is None:
+                return None
+            day = dt.strftime('%a')
+            time = dt.strftime('%I:%M%p')
+        else: #assuming they are passing day, time
+            day = args[0]
+            time = args[1]
+
         return self.calendarData[day]['Time'][time]
+
+    def HasAttachment(self, dt):
+        #dt = datetime.datetime object
+        eventInfo = self.GetMeetingData(dt)
+        return eventInfo['Has Attachments']
 
     def GetMeetingAttachment(self, day, time):
         # Returns a dictionary with the meeting's attachment content,

@@ -1,50 +1,13 @@
 import urllib.request, re
 from base64 import b64encode, b64decode
 import datetime
+import time
 
-"""
-    1/8/2017
-    Developer: David S. Gonzalez
-    Email: davidsanchez23@icloud.com/dgonzalez@extron.com
-    v1_0_1 Add Support For impersonation account
-    v1_0_2 incorporate Daylight Savings
+offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
+offsetHours = offsetSeconds / 60 / 60 *-1
+MY_TIME_ZONE = offsetHours
 
-    2017-06-06
-    Added ability to get calendar attachments and save them to local file system
-
-    2017-06-07 - Joel Lasher
-    Created GetMeetingAttachment which returns the contents of a meeting attachment
-
-    2017-06-08 - Joel Lasher
-    Updated GetMeetingAttachment and added example for saving an attachment below
-
-
-Example main.py
-
-import exchange_interface
-testCalendar = Exchange('outlook.office365.com', 'room@extron.com', 'password', 'Office365', "UTC-08:00")
-testCalendar.UpdateCalendarData()
-print(testCalendar.GetWeekData())
-print(testCalendar.GetMeetingData('Tue', '3:00PM'))
-
-Attachment = testCalendar.GetMeetingAttachment('Thu', '3:00PM')
-attContent = b64decode(Attachment['Attachment1']['Content'])
-attType = b64decode(Attachment['Attachment1']['ContentType'])
-
-fType = {'video/mp4': '.mp4',
-         'text/plain': '.txt',
-         'text/xml': '.xml',
-         # ...
-         'audio/mp4': '.mp4',
-         'video/mp4': '.mp4',
-         }
-
-fName = 'myfile.{}'.format(fType.get(attType))
-f = open(fName, 'wb')
-f.write(attContent)
-f.close()
-
-"""
+print('MY_TIME_ZONE=UTC{}'.format(MY_TIME_ZONE))
 
 def ConvertTimeStringToDatetime(string):
     print('ConvertTimeStringToDatetime\nstring=', string)
@@ -60,10 +23,25 @@ def ConvertTimeStringToDatetime(string):
         minute=int(minute),
         second=int(second),
         )
+
+    dt = AdjustDatetimeForTimezone(dt, fromZone='Exchange')
+
     return dt
 
 def ConvertDatetimeToTimeString(dt):
+    dt = AdjustDatetimeForTimezone(dt, fromZone='Mine')
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+def AdjustDatetimeForTimezone(dt, fromZone):
+    delta = datetime.timedelta(hours=MY_TIME_ZONE)
+    if fromZone == 'Mine':
+        dt = dt - delta
+    elif fromZone == 'Exchange':
+        dt = dt + delta
+
+    return dt
+
+
 
 class _CalendarItem:
     def __init__(self, startDT, endDT, data=None):
@@ -119,7 +97,7 @@ class _CalendarItem:
         return False
 
     def __str__(self):
-        return '<CalendarItem objectStart={}, End={}, Subject={}, HasAttachement={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachment())
+        return '<CalendarItem object: Start={}, End={}, Subject={}, HasAttachement={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachment())
 
     def __repr__(self):
         return str(self)
@@ -144,7 +122,7 @@ class Exchange():
     def __init__(self, server, username, password, service, timeZone, daylightSaving=True, impersonation=None):
         self.service = service
         self.daylightSavings = daylightSaving
-        self.timeZoneOffset = self.timeZone(timeZone)
+        self._timeZone = timeZone
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
@@ -278,7 +256,7 @@ class Exchange():
             #parse their data and create CalendarItem objects
             #store CalendarItem objects in self
 
-            print('\nmatchCalItem.group(0)=', matchCalItem.group(0))
+            #print('\nmatchCalItem.group(0)=', matchCalItem.group(0))
 
             data = {}
             startDT = None
@@ -510,52 +488,7 @@ class Exchange():
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
 
-    def timeZone(self, tzID):
 
-        offSets = {
-            "UTC-12:00": 12,
-            "UTC-11:00": 11,
-            "UTC-10:00": 10,
-            "UTC-09:00": 9, "UTC-09:30": [9, 30],
-            "UTC-08:00": 8,
-            "UTC-07:00": 7,
-            "UTC-06:00": 6,
-            "UTC-05:00": 5,
-            "UTC-04:00": 4, "UTC-04:30": [4, 30],
-            "UTC-03:00": 3, "UTC-03:30": [3, 30],
-            "UTC-02:00": 2,
-            "UTC-01:00": 1,
-            "UTC+00:00": 0,
-            "UTC+01:00": -1,
-            "UTC+02:00": -2,
-            "UTC+03:00": -3,
-            "UTC+04:00": -4, "UTC+04:30": [-4, -30],
-            "UTC+05:00": -5, "UTC+05:30": [-5, -30], "UTC+05:45": [-5, -45],
-            "UTC+06:00": -6,
-            "UTC+07:00": -7,
-            "UTC+08:00": -8,
-            "UTC+09:00": -9, "UTC+09:30": [-9, -30],
-            "UTC+10:00": -10, "UTC+10:30": [-10, -30],
-            "UTC+11:00": -11, "UTC+11:30": [-11, -30],
-            "UTC+12:00": -12, "UTC+12:45": [-12, -45],
-            "UTC+13:00": -13,
-            "UTC+14:00": -14
-        }
-
-        try:
-            if self.daylightSavings == True:
-                return datetime.timedelta(hours=offSets[tzID][0] - 1, minutes=offSets[tzID][1])
-            else:
-                return datetime.timedelta(hours=offSets[tzID][0], minutes=offSets[tzID][1])
-        except Exception as e:
-            if self.daylightSavings == True:
-                return datetime.timedelta(hours=offSets[tzID] - 1)
-            else:
-                return datetime.timedelta(hours=offSets[tzID])
-
-                # ----------------------------------------------------------------------------------------------------------------------
-                # -------------------------------------------------HTTP Request---------------------------------------------------------
-                # ----------------------------------------------------------------------------------------------------------------------
 
     def _SendHttp(self, body):
 
@@ -603,7 +536,7 @@ class Exchange():
 
         return returnCalItems
 
-    def GetNextCalItem(self):
+    def GetNextCalItems(self):
         #return a list CalendarItems
         #will not return events happening now. only the nearest future events
         #if multiple events start at the same time, all CalendarItems will be returned

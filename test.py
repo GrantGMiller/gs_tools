@@ -18,3 +18,7 @@ exchange.UpdateCalendarData()
 print()
 for calItem in exchange.GetMeetingData():
     print(calItem)
+
+print('GetNextCalItems')
+for item in exchange.GetNextCalItems():
+    print(item)

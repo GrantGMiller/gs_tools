@@ -1,6 +1,6 @@
 import urllib.request, re
 from base64 import b64encode, b64decode
-import datetime, copy
+import datetime
 
 """
     1/8/2017
@@ -23,7 +23,7 @@ Example main.py
 
 import exchange_interface
 testCalendar = Exchange('outlook.office365.com', 'room@extron.com', 'password', 'Office365', "UTC-08:00")
-testCalendar.UpdateCalendar()
+testCalendar.UpdateCalendarData()
 print(testCalendar.GetWeekData())
 print(testCalendar.GetMeetingData('Tue', '3:00PM'))
 
@@ -46,8 +46,101 @@ f.close()
 
 """
 
+def ConvertTimeStringToDatetime(string):
+    print('ConvertTimeStringToDatetime\nstring=', string)
+    year, month, etc = string.split('-')
+    day, etc = etc.split('T')
+    hour, minute, etc = etc.split(':')
+    second = etc[:-1]
+    dt = datetime.datetime(
+        year=int(year),
+        month=int(month),
+        day=int(day),
+        hour=int(hour),
+        minute=int(minute),
+        second=int(second),
+        )
+    return dt
+
+def ConvertDatetimeToTimeString(dt):
+    return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+class _CalendarItem:
+    def __init__(self, startDT, endDT, data=None):
+        if data is None:
+            data = {}
+        #print('_CalendarItem data=', data)
+        self._data = data.copy()  # dict like {'ItemId': 'jasfsd', 'Subject': 'SuperMeeting', ...}
+        self._startDT = startDT
+        self._endDT = endDT
+        self._attachments = []
+
+    def AddData(self, key, value):
+        self._data[key] = value
+
+    def Get(self, key):
+        if key is 'Start':
+            return self._startDT
+        elif key is 'End':
+            return self._endDT
+        else:
+            return self._data.get(key, None)
+
+    def __contains__(self, dt):
+        if isinstance(dt, datetime.date):
+            if self._startDT.year == dt.year and \
+                    self._startDT.month == dt.month and \
+                    self._startDT.day == dt.day:
+                return True
+
+            elif self._endDT.year == dt.year and \
+                    self._endDT.month == dt.month and \
+                    self._endDT.day == dt.day:
+                return True
+
+            else:
+                return False
+
+        elif isinstance(dt, datetime.datetime):
+            if dt >= self._startDT and dt <= self._endDT:
+                return True
+            else:
+                return False
+
+    def HasAttachment(self):
+        if len(self._attachments) > 0:
+            return True
+        else:
+            if self._data['HasAttachments'] is True:
+                return True
+            else:
+                return False
+
+        return False
+
+    def __str__(self):
+        return '<CalendarItem objectStart={}, End={}, Subject={}, HasAttachement={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachment())
+
+    def __repr__(self):
+        return str(self)
+
+class _Attachment:
+    def __init__(self, Filename, AttachmentId, parentExchange):
+        self.Filename = Filename
+        self.AttachmentId = AttachmentId
+        self._parentExchange = parentExchange
+
+    def GetContent(self):
+        pass
+
+    def SaveToPath(self, path):
+        pass
+
 
 class Exchange():
+
+
+    #Exchange methods
     def __init__(self, server, username, password, service, timeZone, daylightSaving=True, impersonation=None):
         self.service = service
         self.daylightSavings = daylightSaving
@@ -55,142 +148,25 @@ class Exchange():
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
+        self._impersonation = impersonation
         self.header = {'content-type': 'text/xml; charset=utf-8',
                        'Authorization': 'Basic {}'.format(self.login)
                        }
-        self.calendarData = {'Mon': {}, 'Tue': {}, 'Wed': {}, 'Thu': {}, 'Fri': {}, 'Sat': {}, 'Sun': {}}
-        self.generateCalData()  # Populates calendarData dictionary
-        self.FolderID = None
-        self.ChangeKey = None
-        self.startOfWeek = None
-        self.endOfWeek = None
-        self.soapHeader = self.setSoapHeader(impersonation)
-        self.requestIdKey('calendar')  # For future Calendar select
+        self._calendarItems = []
 
-    # ----------------------------------------------------------------------------------------------------------------------
-    # --------------------------------------------Time and DB Management----------------------------------------------------
-    # ----------------------------------------------------------------------------------------------------------------------
+        self._startOfWeek = None
+        self._endOfWeek = None
+        self._soapHeader = None
 
-    # Calculates the dates of the week and the first day and last day of the week
-    def generateWeek(self):
-        day = datetime.datetime.today()
-        start = day - datetime.timedelta(days=day.weekday() + 1)
-        end = start + datetime.timedelta(days=6)
-        workingDate = ''
-        calendarDays = []
-        for t in range(0, 7):
-            workingDate = start + datetime.timedelta(days=t)
-            calendarDays.append(workingDate.strftime('%Y-%m-%d'))
-
-        self.calendarData['Mon']['Date'] = calendarDays[1]
-        self.calendarData['Tue']['Date'] = calendarDays[2]
-        self.calendarData['Wed']['Date'] = calendarDays[3]
-        self.calendarData['Thu']['Date'] = calendarDays[4]
-        self.calendarData['Fri']['Date'] = calendarDays[5]
-        self.calendarData['Sat']['Date'] = calendarDays[6]
-        self.calendarData['Sun']['Date'] = calendarDays[0]
-
-        self.startOfWeek = start.strftime('%Y-%m-%d') + 'T00:01:00Z'
-        self.endOfWeek = end.strftime('%Y-%m-%d') + 'T23:59:00Z'
-
-    # Creates all the calendar data and Expands the dictionary
-    def generateCalData(self):
-        timeMinDel = datetime.timedelta(minutes=5)
-        timeHouDel = datetime.timedelta(hours=12)
-        times = {'Date': '', 'Time': {}}
-        timetag = 'AM'
-
-        startTime = datetime.datetime(year=2016, month=1, day=1, hour=11, minute=30)
-        for i in range(0, 288):
-
-            if i == 17:
-                startTime = startTime + timeMinDel - timeHouDel
-            elif i == 144:
-                timetag = 'PM'
-                startTime = startTime + timeMinDel
-            elif i == 161:
-                startTime = startTime + timeMinDel - timeHouDel
-            else:
-                startTime = startTime + timeMinDel
-
-            # Gets rid of the 0 in front or not
-            if str(startTime.time())[0] == '0':
-                shiftCut = 1
-            else:
-                shiftCut = 0
-
-            times['Time'].update({str(startTime.time())[shiftCut:5] + timetag: None})
-
-        # Places the time inside the dates
-        for n in self.calendarData:
-            self.calendarData[n] = copy.deepcopy(times)
-
-    # Internal clock system, returns current time and following times in selected time interval form of a List
-    def currentTimeslotPlus(self, slot):
-        timeTAG = ''
-        shiftCut = 0
-        timeChangeFlag = False
-        initialtime = datetime.datetime.now()
-        timeHouDel = datetime.timedelta(hours=12)
-        timeMinDel = datetime.timedelta(minutes=slot)
-        activeTimes = ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '',
-                       '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
-
-        if int(str(initialtime.time())[0:2]) >= 12:
-            timeTAG = 'PM'
-            if int(str(initialtime.time())[0:2]) == 12:
-                initialtime = initialtime - datetime.timedelta(
-                    minutes=abs(int(str(initialtime.time())[3:5]) % slot))
-            else:
-                initialtime = initialtime - timeHouDel - datetime.timedelta(
-                    minutes=abs(int(str(initialtime.time())[3:5]) % slot))
-        else:
-            timeTAG = 'AM'
-            if str(initialtime.time())[0:2] == '00':
-                initialtime = initialtime + timeHouDel - datetime.timedelta(
-                    minutes=abs(int(str(initialtime.time())[3:5]) % slot))
-            else:
-                initialtime = initialtime - datetime.timedelta(
-                    minutes=abs(int(str(initialtime.time())[3:5]) % slot))
-
-        if str(initialtime.time())[0] == '0' and str(initialtime.time())[1] != '0':
-            shiftCut = 1
-        else:
-            shiftCut = 0
-
-        activeTimes[0] = str(initialtime.time())[shiftCut:5] + timeTAG
-
-        for n in range(1, 40):
-            # Increments by designed
-            initialtime = initialtime + timeMinDel
-
-            if int(str(initialtime.time())[0:2]) > 12:
-                initialtime = initialtime - timeHouDel
-            elif int(str(initialtime.time())[0:2]) == 12 and activeTimes[0][
-                                                             0:5] == '12:00' and timeChangeFlag != True:
-                timeChangeFlag = True
-            elif int(str(initialtime.time())[0:2]) == 12 and timeChangeFlag != True:
-                timeChangeFlag = True
-                if timeTAG == 'AM':
-                    timeTAG = 'PM'
-                else:
-                    timeTAG = 'AM'
-            elif timeChangeFlag == True and int(str(initialtime.time())[0:2]) == 11:
-                timeChangeFlag = False
-
-            if str(initialtime.time())[0] == '0' and str(initialtime.time())[1] != '0':
-                shiftCut = 1
-            else:
-                shiftCut = 0
-
-            activeTimes[n] = str(initialtime.time())[shiftCut:5] + timeTAG
-
-        return activeTimes
+        self._folderID = None
+        self._changeKey = None
+        self._UpdateFolderIdAndChangeKey()
 
     # ----------------------------------------------------------------------------------------------------------------------
     # --------------------------------------------------EWS Services--------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    def setSoapHeader(self, account):
+    def _GetSoapHeader(self, account):
+        #This should only need to be called once to create the header that will be used in the XML request from now on
         if account is None:
             xmlAccount = """<t:RequestServerVersion Version="Exchange2007_SP1" />"""
         else:
@@ -202,10 +178,25 @@ class Exchange():
                             </t:ExchangeImpersonation>""".format(account)
         return xmlAccount
 
-    # Requests Service for ID of calendar folder and change key
-    def requestIdKey(self, calendar):
-        # Regular Expressions to Parce needed data
-        regEx = re.compile(r't:FolderId Id=\"(.{1,})\" ChangeKey=\"(.{1,})\"\/')
+
+    def _UpdateFolderIdAndChangeKey(self):
+        # Requests Service for ID of calendar folder and change key
+        if self._soapHeader is None:
+            self._soapHeader = self._GetSoapHeader(self._impersonation)
+
+        if self._startOfWeek is None:
+            todayDT = datetime.date.today()
+            weekday = todayDT.weekday()
+            startWeekDT = todayDT - datetime.timedelta(days=weekday)
+            self._startOfWeek = ConvertDatetimeToTimeString(startWeekDT)
+
+        if self._endOfWeek is None:
+            todayDT = datetime.date.today()
+            weekday = todayDT.weekday()
+            endWeekDT = todayDT + datetime.timedelta(days=6 - weekday)
+            self._endOfWeek = ConvertDatetimeToTimeString(endWeekDT)
+
+        regExFolderInfo = re.compile(r't:FolderId Id=\"(.{1,})\" ChangeKey=\"(.{1,})\"\/')
 
         xmlbody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -225,35 +216,20 @@ class Exchange():
                           </m:FolderIds>
                         </m:GetFolder>
                       </soap:Body>
-                    </soap:Envelope>""".format(self.soapHeader)
+                    </soap:Envelope>""".format(self._soapHeader)
 
         # Request for ID and Key
-        request = self.httpRequest(xmlbody)
+        response = self._SendHttp(xmlbody)
 
-        if isinstance(request, str):
-            match = regEx.search(request)
+        if isinstance(response, str):
+            matchFolderInfo = regExFolderInfo.search(response)
             # Set FolderId and ChangeKey
-            if match:
-                self.FolderID = match.group(1)
-                self.ChangeKey = match.group(2)
+            if matchFolderInfo:
+                self._folderID = matchFolderInfo.group(1)
+                self._changeKey = matchFolderInfo.group(2)
 
-    # Updates the CalData Dictionary with current Calendar
-    def UpdateCalendar(self):
-        # gets the latest data for this week from exchange and stores it internally
-
-        # Regular Expressions for finding events
-        regExItemId = re.compile(r'<t:ItemId Id=.{1,}?</t:Name>')
-        # Regular Expression for parsing event data
-        regExEventInfo = re.compile(
-            r'<t:ItemId Id=\"(.{1,}?)\".{1,}<t:Subject>(.{1,}?)</t:Subject><t:HasAttachments>.{4,5}</t:HasAttachments><t:Start>(.{1,}?)</t:Start><t:End>(.{1,}?)</t:End>')
-        # Regular expression to find Event Organizer
-        regExOrg = re.compile(r'<t:Name>(.{1,}?)</t:Name>')
-        # Regular expression to fing event change key
-        regExCKey = re.compile(r'ChangeKey=\"(.{1,})\"/')
-        regExHasAttachments = re.compile('\<t:HasAttachments\>(.{4,5})\</t:HasAttachments\>')
-        timetag = ['AM', 'PM']
-
-        self.generateWeek()
+    def UpdateCalendarData(self):
+        # gets the latest data for this week from exchange and stores it
 
         xmlbody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -281,213 +257,86 @@ class Exchange():
                           </m:ParentFolderIds>
                         </m:FindItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self.soapHeader, self.startOfWeek, self.endOfWeek, self.FolderID,
-                                               self.ChangeKey)
-        # Http response for events
-
-        response = self.httpRequest(xmlbody)
+                    </soap:Envelope>""".format(self._soapHeader, self._startOfWeek, self._endOfWeek, self._folderID,
+                                               self._changeKey)
+        #print('xtmbody=', xmlbody)
+        response = self._SendHttp(xmlbody)
         #print('response=', response)
-        # Pull events out of XML
-        if True: #try:
-            matchesAllItems = regExItemId.findall(response)
+        #response now holds all the calendar events between startOfWeek and endOfWeek
 
-            # Clear the calendar Data
-            for days in self.calendarData:
-                for times in self.calendarData[days]['Time']:
-                    self.calendarData[days]['Time'][times] = None
+        regexCalendarItem = re.compile('<t:CalendarItem>.*?<\/t:CalendarItem>')
 
-            for matchItem in matchesAllItems:
+        regexItemId = re.compile('<t:ItemId Id="(.*?)" ChangeKey="(.*?)"/>') #group(1) = itemID, group(2) = changeKey #within a CalendarItem
+        regexSubject = re.compile('<t:Subject>(.*?)</t:Subject>') #within a CalendarItem
+        regexHasAttachments = re.compile('<t:HasAttachments>(.{4,5})</t:HasAttachments>') #within a CalendarItem
+        regexOrganizer = re.compile('<t:Organizer>.*<t:Name>(.*?)</t:Name>.*</t:Organizer>') #group(1)=Name #within a CalendarItem
+        regexStartTime = re.compile('<t:Start>(.*?)</t:Start>') #group(1) = start time string #within a CalendarItem
+        regextEndTime = re.compile('<t:End>(.*?)</t:End>')#group(1) = end time string #within a CalendarItem
 
-                # Clean package to organize events into Dictionary
-                timeList = []
-                initialTime = None
-                processTime = True
-                package = {'Name': '',  # Done
-                           'Event_ID': '',  # Done
-                           'Event_CKey': '',
-                           'Organizer': '',  # Done
-                           'StartDate': '',
-                           'EndDate': '',
-                           'StartDay': '',
-                           'EndDay': '',
-                           'StartTime': '',
-                           'EndTime': '',
-                           'Has Attachments': False,
-                           }
+        for matchCalItem in regexCalendarItem.finditer(response):
+            #go thru the resposne and find any CalendarItems.
+            #parse their data and create CalendarItem objects
+            #store CalendarItem objects in self
 
-                # Sort Matches into Event information into different groups
-                # 1:Event Subject 2:StartTime 3:Endtime
-                matchEventInfo = regExEventInfo.search(matchItem)
-                matchOrginization = regExOrg.search(matchItem)
-                matchChangeKey = regExCKey.search(matchItem)
-                matchHasAttachments = regExHasAttachments.search(matchItem)
+            print('\nmatchCalItem.group(0)=', matchCalItem.group(0))
 
-                # PackageBuilder and Added to Dictionary
-                package['Name'] = matchEventInfo.group(2)
-                package['Organizer'] = matchOrginization.group(1)
-                package['Event_ID'] = matchEventInfo.group(1)
-                package['Event_CKey'] = matchChangeKey.group(1)
-                if matchHasAttachments is not None:
-                    if 'true' in matchHasAttachments.group(1):
-                        package['Has Attachments'] = True
-                    elif 'false' in matchHasAttachments.group(1):
-                        package['Has Attachments'] = False
+            data = {}
+            startDT = None
+            endDT = None
 
-                workingStarttime = datetime.datetime(year=int(matchEventInfo.group(3)[0:4]),
-                                                     month=int(matchEventInfo.group(3)[5:7]),
-                                                     day=int(matchEventInfo.group(3)[8:10]),
-                                                     hour=int(matchEventInfo.group(3)[11:13]),
-                                                     minute=(int(matchEventInfo.group(3)[14:16]) - int(
-                                                         matchEventInfo.group(3)[14:16]) % 30)) - self.timeZoneOffset
+            matchItemId = regexItemId.search(matchCalItem.group(0))
+            data['ItemId'] = matchItemId.group(1)
+            data['ChangeKey'] = matchItemId.group(2)
+            data['Subject'] = regexSubject.search(matchCalItem.group(0)).group(1)
+            data['OrganizerName'] = regexOrganizer.search(matchCalItem.group(0)).group(1)
 
-                workingEndtime = datetime.datetime(year=int(matchEventInfo.group(4)[0:4]),
-                                                   month=int(matchEventInfo.group(4)[5:7]),
-                                                   day=int(matchEventInfo.group(4)[8:10]),
-                                                   hour=int(matchEventInfo.group(4)[11:13]),
-                                                   minute=int(matchEventInfo.group(4)[14:16]) - int(
-                                                       matchEventInfo.group(4)[14:16]) % 30) - self.timeZoneOffset
-
-                package['StartDate'] = str(workingStarttime)[0:10]
-                package['EndDate'] = str(workingEndtime)[0:10]
-
-                try:
-                    if int(str(workingStarttime)[11:13]) > 12:
-                        package['StartTime'] = str(int(str(workingStarttime)[11:13]) - 12) + str(workingStarttime)[
-                                                                                             13:16] + \
-                                               timetag[1]
-                    elif int(str(workingStarttime)[11:13]) == 12:
-                        package['StartTime'] = str(workingStarttime)[11:16] + timetag[1]
-                    else:
-                        if str(workingStarttime)[11:13] == '00':
-                            package['StartTime'] = '12' + str(workingStarttime)[13:16] + timetag[0]
-                        elif str(workingStarttime)[11] == '0' and str(workingStarttime)[12] != '0':
-                            package['StartTime'] = str(workingStarttime)[12:16] + timetag[0]
-                        else:
-                            package['StartTime'] = str(workingStarttime)[11:16] + timetag[0]
-                except Exception as e:
-                    r = e
-
-                try:
-                    if int(str(workingEndtime)[11:13]) > 12:
-                        package['EndTime'] = str(int(str(workingEndtime)[11:13]) - 12) + str(workingEndtime)[13:16] + \
-                                             timetag[1]
-                    elif int(str(workingEndtime)[11:13]) == 12:
-                        package['EndTime'] = str(workingEndtime)[11:16] + timetag[1]
-                    else:
-                        if str(workingEndtime)[11:13] == '00':
-                            package['EndTime'] = '12' + str(workingEndtime)[13:16] + timetag[0]
-                        elif str(workingEndtime)[11] == '0' and str(workingEndtime)[12] != '0':
-                            package['EndTime'] = str(workingEndtime)[12:16] + timetag[0]
-                        else:
-                            package['EndTime'] = str(workingEndtime)[11:16] + timetag[0]
-                except Exception as e:
-                    r = e
-                # Tells what day of the week
-
-
-                package['StartDay'] = datetime.date(year=int(package['StartDate'][0:4]),
-                                                    month=int(package['StartDate'][5:7]),
-                                                    day=int(package['StartDate'][8:10])).strftime('%a')
-                package['EndDay'] = datetime.date(year=int(package['EndDate'][0:4]), month=int(package['EndDate'][5:7]),
-                                                  day=int(package['EndDate'][8:10])).strftime('%a')
-
-                # Convert start time into time slots
-                # Start Times
-                try:
-                    initialTime = datetime.datetime(2000, 1, 1, hour=int(package['StartTime'][0:1]),
-                                                    minute=int(package['StartTime'][2:4]))
-                    workingTag = package['StartTime'][4:6]
-                except Exception as e:
-                    r = e
-                try:
-                    initialTime = datetime.datetime(2000, 1, 1, hour=int(package['StartTime'][0:2]),
-                                                    minute=int(package['StartTime'][3:5]))
-                    workingTag = package['StartTime'][5:7]
-                except Exception as e:
-                    r = e
-
-                timeList.append(package['StartTime'])
-
-                if package['StartTime'] != package['EndTime']:
-                    while processTime is True:
-
-                        trimCut = 0
-                        initialTime += datetime.timedelta(minutes=5)
-
-                        if int(str(initialTime.time())[0:2]) > 12:
-                            initialTime -= datetime.timedelta(hours=12)
-
-                        if str(initialTime.time())[0:5] == '12:00':
-                            if workingTag == 'AM':
-                                workingTag = 'PM'
-                            else:
-                                workingTag = 'AM'
-
-                        if str(initialTime.time())[0] == '0' and str(initialTime.time())[1] != '0':
-                            trimCut = 1
-                        else:
-                            trimCut = 0
-
-                        if str(initialTime.time())[trimCut:5] + workingTag == package['EndTime']:
-
-                            processTime = False
-                        else:
-                            timeList.append(str(initialTime.time())[trimCut:5] + workingTag)
-
-                for timeslots in timeList:  # timeList is a list of str like '6:45PM'
-                    self.calendarData[package['StartDay']]['Time'][timeslots] = package
-
-        else: #except Exception as e:
-            print(e, 'Can not access Account')
-
-    def startEndTimeCalc(self, duration, selectedTime=None, date=None):
-
-        meetingLength = {'30': 30,
-                         '1:00': 60,
-                         '1:30': 90,
-                         '2:00': 120,
-                         '2:30': 150,
-                         '3:00': 180
-                         }
-
-        addtime = datetime.timedelta(minutes=meetingLength[duration])
-
-        if selectedTime[len(selectedTime) - 2:] == 'PM':
-            if selectedTime[:2] == '12':
-                timeConvert = datetime.timedelta(hours=0)
+            res = regexHasAttachments.search(matchCalItem.group(0)).group(1)
+            if 'true' in res:
+                data['HasAttachments'] = True
+            elif 'false' in res:
+                data['HasAttachments'] = False
             else:
-                timeConvert = datetime.timedelta(hours=12)
-        else:
-            if selectedTime[:2] == '12':
-                timeConvert = datetime.timedelta(hours=-12)
-            else:
-                timeConvert = datetime.timedelta(hours=0)
+                data['HasAttachments'] = 'Unknown'
 
-        if len(selectedTime) == 6:
-            minutes = selectedTime[2:-2]
-        else:
-            minutes = selectedTime[3:-2]
+            startTimeString = regexStartTime.search(matchCalItem.group(0)).group(1)
+            endTimeString = regextEndTime.search(matchCalItem.group(0)).group(1)
 
-        if date == None:
-            date = str(datetime.datetime.today().now())
+            startDT = ConvertTimeStringToDatetime(startTimeString)
+            endDT = ConvertTimeStringToDatetime(endTimeString)
 
-        workingStartTime = datetime.datetime(year=int(date[0:4]), month=int(date[5:7]),
-                                             day=int(date[8:10]), hour=int(selectedTime[:-5]),
-                                             minute=int(minutes)) + self.timeZoneOffset + timeConvert
+            calItem = _CalendarItem(startDT, endDT, data)
+            self._AddCalendarItem(calItem)
 
-        workingEndTime = str(workingStartTime + addtime).replace(' ', 'T') + 'Z'
-        workingStartTime = str(workingStartTime).replace(' ', 'T') + 'Z'
+    def _AddCalendarItem(self, calItem):
+        '''
+        This method will add the calendar item to self._calendarItems
+        Making sure it is not duplicated and replacing any old data with new data
+        :param calItem:
+        :return:
+        '''
 
-        return workingStartTime, workingEndTime
+        #Remove any CalendarItems that have ended in the past
+        nowDT = datetime.datetime.now()
+        for sub_calItem in self._calendarItems.copy():
+            endDT = sub_calItem.Get('End')
+            if endDT < nowDT:
+                self._calendarItems.remove(sub_calItem)
 
-    # Creates Adhoc Event
-    def setCreateEvent(self, subject, body, duration=None, date=None, startTime=None, endTime=None):
+        #Remove any old items that have the same ItemId
+        itemId = calItem.Get('ItemId')
 
-        if duration != None:
-            workingStartTime, workingEndTime = self.startEndTimeCalc(duration, startTime, date)
-        else:
-            workingStartTime, nill = self.startEndTimeCalc('30', startTime, date)
-            workingEndTime, nill = self.startEndTimeCalc('30', endTime, date)
+        for sub_calItem in self._calendarItems.copy():
+            if sub_calItem.Get('ItemId') == itemId:
+                self._calendarItems.remove(sub_calItem)
+
+        #Add CalItem to self
+        self._calendarItems.append(calItem)
+
+
+    def CreateCalendarEvent(self, subject, body, startDT=None, endDT=None):
+
+        startTimeString = ConvertDatetimeToTimeString(startDT)
+        endTimeString = ConvertDatetimeToTimeString(endDT)
 
         xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -509,15 +358,29 @@ class Exchange():
                           </m:Items>
                         </m:CreateItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self.soapHeader, subject, body, workingStartTime, workingEndTime)
+                    </soap:Envelope>""".format(self._soapHeader, subject, body, startTimeString, endTimeString)
 
-        self.httpRequest(xmlBody)
+        self._SendHttp(xmlBody)
+
+    def GetCalendarItemByID(self, itemId):
+        for calItem in self._calendarItems:
+            if calItem.Get('ItemId') == itemId:
+                return calItem
 
     # This function updates the end time of an event. Can be modified to update other functions
     # Was built to update end time for RoomAgent GS needs only
-    def SetUpdateEventEndtime(self, itemId, itemCKey, oldEnd, duration):
+    def ChangeEventTime(self, calItem, newStartDT=None, newEndDT=None):
 
-        workingStartTime, workingEndTime = self.startEndTimeCalc(duration, oldEnd)
+        timeUpdateXML = ''
+
+        if newStartDT is not None:
+            startTimeString = ConvertDatetimeToTimeString(newStartDT)
+            timeUpdateXML += '<t:Start>{}</t:Start>'.format(startTimeString)
+
+        if newEndDT is not None:
+            endTimeString = ConvertDatetimeToTimeString(newEndDT)
+            timeUpdateXML += '<t:End>{}</t:End>'.format(endTimeString)
+
 
         xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
@@ -542,11 +405,11 @@ class Exchange():
                           </m:ItemChanges>
                         </m:UpdateItem>
                       </soap:Body>
-                    </soap:Envelope> """.format(self.soapHeader, itemId, itemCKey, workingEndTime)
+                    </soap:Envelope> """.format(self._soapHeader, calItem.Get('ItemId'), calItem.Get('ChangeKey'), timeUpdateXML)
 
-        self.httpRequest(xmlBody)
+        self._SendHttp(xmlBody)
 
-    def setDeleteEvent(self, itemId, itemCkey):
+    def DeleteEvent(self, calItem):
 
         xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -563,20 +426,20 @@ class Exchange():
                           </m:ItemIds>
                         </m:DeleteItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self.soapHeader, itemId, itemCkey)
+                    </soap:Envelope>""".format(self._soapHeader,  calItem.Get('ItemId'), calItem.Get('ChangeKey'))
 
-        request = self.httpRequest(xmlBody)
+        request = self._SendHttp(xmlBody)
 
-    def _attachmentHelper(self, attachmentID):
-        # Compile regex for different XML components
+    def _AttachmentHelper(self, attachmentIDs):
+        # returns a list of _Attachment objects
+
         regExReponse = re.compile(r'<m:ResponseCode>(.+)</m:ResponseCode>')
         regExName = re.compile(r'<t:Name>(.+)</t:Name>')
         regExContentType = re.compile(r'<t:ContentType>(.+)</t:ContentType>')
         regExContent = re.compile(r'<t:Content>(.+)</t:Content>')
-        attData = {}
-        # Check for multiple attachments and parse the responses, then store
-        # them in a dict
-        for i, attachment in enumerate(attachmentID):
+        attachmentObjects = []
+
+        for i, attachmentID in enumerate(attachmentIDs):
             xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                             <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                                            xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
@@ -592,23 +455,28 @@ class Exchange():
                                   </m:AttachmentIds>
                                 </m:GetAttachment>
                               </soap:Body>
-                            </soap:Envelope>""".format(self.soapHeader, attachmentID[i])
+                            </soap:Envelope>""".format(self._soapHeader, attachmentID)
 
-            request = self.httpRequest(xmlBody)
+            request = self._SendHttp(xmlBody)
+
             responseCode = regExReponse.search(request).group(1)
             if responseCode == 'NoError':  # Handle errors sent by the server
                 itemName = regExName.search(request).group(1)
                 itemContent = regExContent.search(request).group(1)
                 itemContentType = regExContentType.search(request).group(1)
-                attData['Attachment{}'.format(i + 1)] = {'Name': '{}'.format(itemName),
-                                                         'Content-Type': '{}'.format(itemContentType),
-                                                         'Content': '{}'.format(itemContent)}
+
+                newAttachementObject = _Attachment(itemName, attachmentID, self)
+                attachmentObjects.append(newAttachementObject)
+
             else:
                 print('An error occurred requesting the attachment: {}'.format(responseCode))
                 return
-        return attData
+        return attachmentObjects
 
-    def getAttachment(self, itemID):
+    def GetAttachments(self, calItem):
+        #returns a list of _Attachment objects
+
+        itemId = calItem.Get('ItemId')
         regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
         xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                         <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -632,12 +500,11 @@ class Exchange():
                               </m:ItemIds>
                             </m:GetItem>
                           </soap:Body>
-                        </soap:Envelope>""".format(self.soapHeader, itemID)
+                        </soap:Envelope>""".format(self._soapHeader, itemId)
 
-        request = self.httpRequest(xmlBody)
-        print(request)
-        attachmentList = regExAttKey.findall(request)
-        return self._attachmentHelper(attachmentList)
+        response = self._SendHttp(xmlBody)
+        attachmentIdList = regExAttKey.findall(response)
+        return self._AttachmentHelper(attachmentIdList)
 
     # ----------------------------------------------------------------------------------------------------------------------
     # -----------------------------------------------Time Zone Handling-----------------------------------------------------
@@ -690,7 +557,7 @@ class Exchange():
                 # -------------------------------------------------HTTP Request---------------------------------------------------------
                 # ----------------------------------------------------------------------------------------------------------------------
 
-    def httpRequest(self, body):
+    def _SendHttp(self, body):
 
         body = body.encode()
         request = urllib.request.Request(self.httpURL, body, self.header, method='POST')
@@ -706,74 +573,55 @@ class Exchange():
             # ------------------------------------------------Return Request--------------------------------------------------------
             # ----------------------------------------------------------------------------------------------------------------------
 
-    def GetWeekData(self):
-        # returns a dict like
-        return self.calendarData
+    def GetAllEvents(self):
+        return self._calendarItems.copy()
 
-    def GetMeetingData(self, *args):
-        # return a dict of calendar event data, or return None
-        # day = str like 'Mon', 'Tue', etc
-        # time = str like '5:30PM'
+    def GetMeetingData(self, dt=None):
+        #dt = datetime.date or datetime.datetime
+        # return a list of events that occur on datetime.date or at datetime.datetime
+        if dt is None:
+            dt = datetime.datetime.now()
 
-        if len(args) == 1: #probably a datetime.datetime object
-            dt = args[0]
-            if dt is None:
-                return None
-            day = dt.strftime('%a')
-            time = dt.strftime('%I:%M%p')
-        else: #assuming they are passing day, time
-            day = args[0]
-            time = args[1]
+        events = []
 
-        return self.calendarData[day]['Time'][time]
+        for calItem in self._calendarItems.copy():
+            if dt in calItem:
+                events.append(calItem)
 
-    def HasAttachment(self, dt):
-        #dt = datetime.datetime object
-        eventInfo = self.GetMeetingData(dt)
-        return eventInfo['Has Attachments']
+        return events
 
-    def GetMeetingAttachment(self, day, time):
-        # Returns a dictionary with the meeting's attachment content,
-        # content-type, and filename, if it exists.
-        if 'Event_ID' in self.calendarData[day]['Time'][time]:
-            return self.getAttachment(self.calendarData[day]['Time'][time]['Event_ID'])
-        else:
-            return None
+    def GetNowCalItem(self):
+        #returns list of calendar items happening now
 
-    def GetNextEventDatetime(self):
+        returnCalItems = []
 
-        weekDayOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
-                        'Sun', ]  # TODO: may need to reconsider this assumption
         nowDT = datetime.datetime.now()
-        startDay = nowDT.strftime('%a')
-        startIndex = weekDayOrder.index(startDay)
 
-        weekData = self.GetWeekData().copy()
+        for calItem in self._calendarItems.copy():
+            if nowDT in calItem:
+                returnCalItems.append(calItem)
 
-        firstEventDT = None
+        return returnCalItems
 
-        for dayStr in weekDayOrder[startIndex:]:
-            for timeStr in weekData[dayStr]['Time']:
-                event = weekData[dayStr]['Time'][timeStr]
-                if event is not None:
-                    eventDTstring = weekData[dayStr]['Date']
-                    year, month, day = eventDTstring.split('-')
-                    year = int(year)
-                    month = int(month)
-                    day = int(day)
+    def GetNextCalItem(self):
+        #return a list CalendarItems
+        #will not return events happening now. only the nearest future events
+        #if multiple events start at the same time, all CalendarItems will be returned
 
-                    hour, etc = timeStr.split(':')
-                    hour = int(hour)
-                    minute = int(etc[:2])
-                    ampm = etc[-2:]
+        nowDT = datetime.datetime.now()
 
-                    if ampm == 'PM' and hour is not 12:
-                        hour += 12
+        nextDT = None
+        for calItem in self._calendarItems.copy():
+            startDT = calItem.Get('Start')
+            if startDT > nowDT: #its in the future
+                if nextDT is None or startDT < nextDT: #its sooner than the previous soonest one. (Wha!?)
+                    nextDT = startDT
 
-                    eventDT = datetime.datetime(year=year, month=month, day=day, hour=hour, minute=minute)
-
-                    if eventDT > nowDT:  # The event is in the future
-                        if firstEventDT is None or eventDT < firstEventDT:
-                            firstEventDT = eventDT
-
-        return firstEventDT
+        if nextDT is None:
+            return [] #no events in the future
+        else:
+            returnCalItems = []
+            for calItem in self._calendarItems.copy():
+                if nextDT in calItem:
+                    returnCalItems.append(calItem)
+            return returnCalItems

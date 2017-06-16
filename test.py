@@ -14,9 +14,7 @@ exchange = exchange_interface.Exchange(
     impersonation=None,
 )
 
-exchange.UpdateCalendar()
-#print('exchange.GetWeekData()=', exchange.GetWeekData())
-
-nextDT = exchange.GetNextEventDatetime()
-print('nextDT=', nextDT)
-print('exchange.GetMeetingData(nextDT)=', exchange.GetMeetingData(nextDT))
+exchange.UpdateCalendarData()
+print()
+for calItem in exchange.GetMeetingData():
+    print(calItem)

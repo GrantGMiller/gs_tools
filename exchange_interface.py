@@ -286,8 +286,7 @@ class Exchange():
         # Http response for events
 
         response = self.httpRequest(xmlbody)
-        print('response=', response
-              )
+        #print('response=', response)
         # Pull events out of XML
         if True: #try:
             matchesAllItems = regExItemId.findall(response)

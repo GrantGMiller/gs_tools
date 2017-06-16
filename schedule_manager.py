@@ -30,12 +30,8 @@ class ScheduleManager():
             for DayKey in Clock.WEEKDAYS:  # Clock.WEEKDAYS = {'Monday': 0, 'Tuesday': 1, 'Wednesday': 2, 'Thursday': 3, 'Friday': 4, 'Saturday': 5, 'Sunday': 6}
                 Days.append(DayKey)
 
-        else:
-            if not isinstance(day, list):
-                day = [day]
-
-            if day in Clock.WEEKDAYS:
-                Days.append(day)
+        else: #days is prob a list already
+            Days = days
 
         # Determine the time(s)
         Times = []
@@ -72,7 +68,7 @@ class ScheduleManager():
             Times.append(time)
 
         # Create the clock
-        NewClock = Clock(Times, Days, self.ClockCallback)
+        NewClock = Clock(Times, Days, self._ClockCallback)
         NewClock.Enable()
         self.Clocks.append(NewClock)
 

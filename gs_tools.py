@@ -18,11 +18,13 @@ import copy
 import hashlib
 import datetime
 import calendar
+import base64
 
 # Set this false to disable all print statements ********************************
 debug = True
 if not debug:
     print = lambda *args, **kwargs: None
+
 
 # *******************************************************************************
 
@@ -36,7 +38,7 @@ class Button(extronlib.ui.Button):
         'Held',
         'Repeated',
         'Released',
-        ]
+    ]
 
     def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
         '''
@@ -81,7 +83,6 @@ class Button(extronlib.ui.Button):
         if self._autostate_callbacks[state] is not None:
             self._autostate_callbacks[state](button, state)
 
-
     def RemoveStateChange(self):
         '''
         This will disable all states changes based on press/release
@@ -103,7 +104,7 @@ class Button(extronlib.ui.Button):
             setattr(self, eventName, lambda *args: None)
 
     def _DoStateChange(self, state):
-        #print(self.ID, '_DoStateChange')
+        # print(self.ID, '_DoStateChange')
         if state in self.StateChangeMap:
             # print(self.ID, 'state in self.StateChangeMap')
             NewState = self.StateChangeMap[state]
@@ -286,7 +287,7 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
         yield 'Type', str(type(self))
 
     def StartKeepAlive(self, t, cmd):
-        #super().StartKeepAlive does not call .Send apparently so im doing it differnt
+        # super().StartKeepAlive does not call .Send apparently so im doing it differnt
         if self._keep_alive_running is False:
             self._keep_alive_running = True
 
@@ -298,7 +299,6 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
 
             self._keep_alive_Timer.Start()
 
-
     def StopKeepAlive(self):
         if self._keep_alive_running is True:
             self._keep_alive_running = False
@@ -308,14 +308,14 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
 
     def Send(self, data):
         # Send data in chunks.
-        chunkSize = 256 #256 seems to work well on an actual IPCP
+        chunkSize = 256  # 256 seems to work well on an actual IPCP
         numberOfChunks = int(len(data) / chunkSize) + 1
         ##print('NumberOfChunks=', NumberOfChunks)
         lastPrint = 0
         for i in range(numberOfChunks):
             if numberOfChunks > 1:
                 if i % 1000 == 0:
-                    percent = int((i/numberOfChunks)*100)
+                    percent = int((i / numberOfChunks) * 100)
                     if percent > lastPrint:
                         lastPrint = percent
                         print('Sending in chunks: {}%'.format(lastPrint))
@@ -331,13 +331,58 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             try:
                 self._ChunkSend(Chunk)
                 ##print('Chunk', i, '=', Chunk)
-                #time.sleep(0.001)  # make sure chunks are received in order
+                time.sleep(0.001)  # 256bytes/0.001seconds = 2.5MB/s max transfer speed
                 pass
             except Exception as e:
                 print(e)
 
     def _ChunkSend(self, data):
-        super.Send(data)
+        super().Send(data)
+
+
+def encrypt(key, clearText):
+    enc = []
+    for i in range(len(clearText)):
+        key_c = key[i % len(key)]
+        enc_c = chr((ord(clearText[i]) + ord(key_c)) % 256)
+        enc.append(enc_c)
+    return base64.urlsafe_b64encode("".join(enc).encode()).decode()
+
+
+def decrypt(key, encryptedText):
+    dec = []
+    encryptedText = base64.urlsafe_b64decode(encryptedText).decode()
+    for i in range(len(encryptedText)):
+        key_c = key[i % len(key)]
+        dec_c = chr((256 + ord(encryptedText[i]) - ord(key_c)) % 256)
+        dec.append(dec_c)
+    return "".join(dec)
+
+
+class EthernetClientInterfaceEncrypted(EthernetClientInterface):
+    def __init(self, *args, **kwargs):
+        self._rxBuffer = ''
+        super().__init__(*args, **kwargs)
+        self._encryptionKey = '{}:{}'.format(self.IPAddress, self.IPPort)
+
+    def Send(self, data):
+        if isinstance(data, bytes):
+            data = date.decode()
+
+        encryptedData = encrypt(self._encryptionKey, data)
+
+        super().Send(encryptedData)
+
+    def _ReceiveData(self, interface, data):
+        self._rxBuffer += data.decode()
+        try:
+            decryptedData = decrypt(self._encryptionKey, self._rxBuffer)
+            if callable(self.ReceiveData):
+                self.ReceiveData(self, decryptedData)
+        except Exception as e:
+            # probably have not received the full encrypted string
+            pass
+
 
 def get_parent(client_obj):
     '''
@@ -348,6 +393,7 @@ def get_parent(client_obj):
     for interface in EthernetServerInterfaceEx._all_servers_ex.values():
         if client_obj in interface.Clients:
             return interface
+
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
     '''
@@ -470,6 +516,11 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
             yield item, getattr(self, item)
 
         yield 'Type', str(type(self))
+
+
+class EthernetServerInterfaceExEncrypted(EthernetServerInterfaceEx):
+    # TODO: a class that can send/rx encrypted data
+    pass
 
 
 class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
@@ -693,7 +744,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
 
 class UIDevice(extronlib.device.UIDevice):
-    #test
+    # test
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -711,8 +762,8 @@ class UIDevice(extronlib.device.UIDevice):
 
         self._exclusive_modals = []
 
-        self._PageHistory = [] #hold last X pages
-        self._PageOffset = 0 # 0 = last entry in
+        self._PageHistory = []  # hold last X pages
+        self._PageOffset = 0  # 0 = last entry in
 
     def ShowPopup(self, popup, duration=0):
         print('ShowPopup popup={}, duration={}'.format(popup, duration))
@@ -724,19 +775,19 @@ class UIDevice(extronlib.device.UIDevice):
                     self.HidePopup(modal_name)
 
     def _DoShowPopup(self, popup, duration=0):
-            super().ShowPopup(popup, duration)
-            if duration is not 0:
-                if popup in self.PopupWaits:
-                    self.PopupWaits[popup].Cancel()
+        super().ShowPopup(popup, duration)
+        if duration is not 0:
+            if popup in self.PopupWaits:
+                self.PopupWaits[popup].Cancel()
 
-                NewWait = Wait(duration, lambda: self.HidePopup(popup))
-                self.PopupWaits[popup] = NewWait
+            NewWait = Wait(duration, lambda: self.HidePopup(popup))
+            self.PopupWaits[popup] = NewWait
 
-            for PopupName in self.PopupData:
-                if PopupName != popup:
-                    self.PopupData[PopupName] = 'Unknown'
+        for PopupName in self.PopupData:
+            if PopupName != popup:
+                self.PopupData[PopupName] = 'Unknown'
 
-            self.PopupData[popup] = 'Showing'
+        self.PopupData[popup] = 'Showing'
 
     def HidePopup(self, popup):
         print('HidePopup popup=', popup)
@@ -769,7 +820,7 @@ class UIDevice(extronlib.device.UIDevice):
             self._PageHistory.append(page)
 
     def PageBack(self):
-        #TODO
+        # TODO
         pass
 
     def IsShowing(self, pageOrPopupName):
@@ -832,7 +883,8 @@ class UIDevice(extronlib.device.UIDevice):
     def SetVisible(self, id, state):
         for btn in Button.AllButtons:
             if btn.ID == id:
-                    btn.SetVisible(state)
+                btn.SetVisible(state)
+
 
 # extronlib *********************************************************************
 
@@ -1013,6 +1065,7 @@ def isConnected(interface):
     else:
         return False
 
+
 if not File.Exists('connection_handler.log'):
     file = File('connection_handler.log', mode='wt')
     file.close()
@@ -1025,7 +1078,6 @@ _connection_status = {}
 GREEN = 2
 RED = 1
 WHITE = 0
-
 
 
 # Polling Engine ****************************************************************
@@ -1151,7 +1203,6 @@ class PollingEngine():
                                                                                                     Qualifier, e))
 
 
-
 # Feedback helpers **************************************************************
 
 class VisualFeedbackHandler():
@@ -1159,13 +1210,13 @@ class VisualFeedbackHandler():
     FeedbackDicts = []
 
     def _MainVisualFeedbackHandler(self, interface, command, value, qualifier):
-        #print('MainVisualFeedbackHandler(\n interface={},\n command={},\n value={},\n qualifier={})'.format(interface, command, value, qualifier))
+        # print('MainVisualFeedbackHandler(\n interface={},\n command={},\n value={},\n qualifier={})'.format(interface, command, value, qualifier))
         doCallbacks = []
         for d in self.FeedbackDicts:
             if d['interface'] == interface:
                 if d['command'] == command:
                     if d['qualifier'] == qualifier:
-                        #print('matched d=', d)
+                        # print('matched d=', d)
                         obj = d['feedbackObject']
                         if 'value' in d:
 
@@ -1386,6 +1437,7 @@ class PersistantVariables():
     '''
     This class is used to easily manage non-volatile variables using the extronlib.system.File class
     '''
+
     def __init__(self, filename):
         '''
 
@@ -1444,6 +1496,7 @@ class PersistantVariables():
 
 RemoteTraceServer = None
 
+
 def RemoteTrace(IPPort=1024):
     '''
     This function return a new print function that will print to stdout and also send to any clients connected to the server defined on port IPPort
@@ -1462,7 +1515,8 @@ def RemoteTrace(IPPort=1024):
 
         HandleConnection(
             RemoteTraceServer,
-            timeout=5*3000, # After this many seconds, a client who has not sent any data to the server will be disconnected.
+            timeout=5 * 3000,
+            # After this many seconds, a client who has not sent any data to the server will be disconnected.
         )
 
         result = RemoteTraceServer.StartListen()
@@ -1504,8 +1558,8 @@ def toPercent(Value, Min=0, Max=100):
 
         return Percent
     except Exception as e:
-        #print(e)
-        #ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'error')
+        # print(e)
+        # ProgramLog('gs_tools toPercent Erorr: {}'.format(e), 'error')
         return 0
 
 
@@ -1595,6 +1649,7 @@ def strip_non_numbers(s):
         if ch.isdigit():
             new_s += ch
     return new_s
+
 
 class Keyboard():
     '''
@@ -1842,6 +1897,7 @@ class Keyboard():
     def SetPasswordMode(self, mode):
         self._password_mode = mode
 
+
 # ScrollingTable ****************************************************************
 ScrollingTable_debug = False
 
@@ -1852,6 +1908,7 @@ class ScrollingTable():
         '''
         Represents a single cell in a scrolling table
         '''
+
         def __init__(self, parent_table, row, col, btn=None, callback=None):
             self._parent_table = parent_table
             self._row = row
@@ -1863,9 +1920,10 @@ class ScrollingTable():
             OldHandler = self._btn.Released
 
             def NewHandler(button, state):
-                if ScrollingTable_debug and debug: print('Cell NewHandler(\n button={}\n state={}'.format(button, state))
+                if ScrollingTable_debug and debug: print(
+                    'Cell NewHandler(\n button={}\n state={}'.format(button, state))
 
-                #Handle Mutually exclusive cells
+                # Handle Mutually exclusive cells
                 if self._parent_table._cellMutex == True:
                     for cell in self._parent_table._cells:
                         if cell._row != self._row:
@@ -1873,7 +1931,7 @@ class ScrollingTable():
                         else:
                             cell.SetState(1)
 
-                #Do the new callback
+                # Do the new callback
                 if OldHandler:
                     OldHandler(button, state)
                 if self._callback:
@@ -1948,13 +2006,13 @@ class ScrollingTable():
 
     @CellPressed.setter
     def CellPressed(self, func):
-        #func should accept two params the ScrollingTable object and the Cell object
+        # func should accept two params the ScrollingTable object and the Cell object
         self._cell_pressed_callback = func
         for cell in self._cells:
             cell._callback = func
 
     def SetCellMutex(self, state):
-        #Setting this true will highlight a row when it is pressed
+        # Setting this true will highlight a row when it is pressed
         self._cellMutex = state
 
     def set_table_header_order(self, header_list=[]):
@@ -2232,7 +2290,7 @@ class ScrollingTable():
             max_row_offset = len(self._data_rows) - self._max_row
             percent = toPercent(self._current_row_offset, 0, max_row_offset)
             self._scroll_level.SetLevel(percent)
-            self.IsScrollable() #show/hide the scroll bar
+            self.IsScrollable()  # show/hide the scroll bar
 
     def get_column_buttons(self, col_number):
         # returns all buttons in the column.
@@ -2262,13 +2320,13 @@ class ScrollingTable():
             'ScrollingTable.get_cell_value Not found. row_number={}, col_number={}'.format(row_number, col_number))
 
     def get_row_data_from_cell(self, cell):
-        #returns a dict of the row data
+        # returns a dict of the row data
         rowIndex = cell.get_row()
         dataIndex = rowIndex + self._current_row_offset
         return self._data_rows[dataIndex]
 
     def get_row_data(self, whereDict):
-        #returns a list of dicts that match whereDict
+        # returns a list of dicts that match whereDict
         result = []
 
         for row in self._data_rows:
@@ -2402,6 +2460,7 @@ class UserInputClass:
     Get a calendar data as a datetime.datetime object: UserInput.get_date(**kwargs)
     etc...
     '''
+
     def __init__(self, TLP):
         self._TLP = TLP
 
@@ -2409,18 +2468,19 @@ class UserInputClass:
         self._kb_text_feedback = None
 
     def setup_calendar(self,
-        calDayNumBtns, #list of int() where the first int is the first day of the first week. Assuming 5 weeks of 7 days
-        calDayAgendaBtns=None,
-        calBtnNext=None, #button that when pressed will show the next month
-        calBtnPrev=None, #button that when pressed will show the previous month
-        calBtnCancel=None, #button when presses will hide the modal
-        calLblMessage=None, #Button or Label
-        calLblMonthYear=None,
-        calPopupName=None,
-        startDay=None,
-        maxAgendaWidth=None
+                       calDayNumBtns,
+                       # list of int() where the first int is the first day of the first week. Assuming 5 weeks of 7 days
+                       calDayAgendaBtns=None,
+                       calBtnNext=None,  # button that when pressed will show the next month
+                       calBtnPrev=None,  # button that when pressed will show the previous month
+                       calBtnCancel=None,  # button when presses will hide the modal
+                       calLblMessage=None,  # Button or Label
+                       calLblMonthYear=None,
+                       calPopupName=None,
+                       startDay=None,
+                       maxAgendaWidth=None
 
-        ):
+                       ):
         '''
         This func must be called before self.get_date()
         :param calDayNumBtns:
@@ -2436,7 +2496,7 @@ class UserInputClass:
         :return:
         '''
 
-        #Save args
+        # Save args
         self._calDayNumBtns = calDayNumBtns
         self._calDayAgendaBtns = calDayAgendaBtns
         self._calBtnNext = calBtnNext
@@ -2447,34 +2507,34 @@ class UserInputClass:
         self._calPopupName = calPopupName
         self._maxAgendaWidth = maxAgendaWidth
 
-        #Create attributes
+        # Create attributes
         if startDay is None:
-            startDay = 6 #sunday
+            startDay = 6  # sunday
         self._calObj = calendar.Calendar(startDay)
 
         self._currentYear = 0
         self._currentMonth = 0
         self._currentDatetime = None
         self._calEvents = [
-            #{'datetime': dt,
+            # {'datetime': dt,
             # 'name': 'name of event',
             # 'meta': {'Room Name': 'Room1',
             #          'Device Name': 'Room2',
             #           }
-            #}
-            ]
+            # }
+        ]
         self._calCallback = None
         self._dtMap = {}
         self._calHeldEvent = None
 
-        #Hide/Cancel button
+        # Hide/Cancel button
         if self._calBtnCancel is not None:
             @event(self._calBtnCancel, 'Released')
             def calBtnCancelEvent(button, state):
                 if self._calPopupName is not None:
                     self._TLP.HidePopup(self._calPopupName)
 
-        #Next/Prev buttons
+        # Next/Prev buttons
         @event(self._calBtnNext, 'Released')
         def calBtnNextEvent(button, state):
             self._currentMonth += 1
@@ -2493,30 +2553,31 @@ class UserInputClass:
 
             self._calDisplayMonth(datetime.datetime(year=self._currentYear, month=self._currentMonth, day=1))
 
-        #Day/Agenda buttons
+        # Day/Agenda buttons
         @event(self._calDayNumBtns, 'Released')
         @event(self._calDayAgendaBtns, 'Released')
         def calDayNumBtnsEvent(button, state):
             pass
 
-        #Init the button states
+        # Init the button states
         for btn in self._calDayNumBtns:
             btn.SetState(0)
         for btn in self._calDayAgendaBtns:
             btn.SetState(0)
 
-        #Load previous data
+        # Load previous data
         self._LoadCalData()
 
     def get_date(self,
-            popupName,
-            callback=None, # function - should take 2 params, the UserInput instance and the value the user submitted
-            feedback_btn=None,
-            passthru=None,  # any object that you want to pass thru to the callback
-            message=None,
-            startMonth=None,
-            startYear=None,
-            ):
+                 popupName,
+                 callback=None,
+                 # function - should take 2 params, the UserInput instance and the value the user submitted
+                 feedback_btn=None,
+                 passthru=None,  # any object that you want to pass thru to the callback
+                 message=None,
+                 startMonth=None,
+                 startYear=None,
+                 ):
         '''
         The programmer must call self.setup_calendar() before calling this method.
         :param popupName:
@@ -2529,7 +2590,7 @@ class UserInputClass:
         :return:
         '''
 
-        self._calCallback=callback
+        self._calCallback = callback
 
         if self._calLblMessage is not None:
             if message is None:
@@ -2537,7 +2598,7 @@ class UserInputClass:
             else:
                 self._calLblMessage.SetText(message)
 
-        #Populate the calendar info
+        # Populate the calendar info
         now = datetime.datetime.now()
         if startMonth is None:
             startMonth = now.month
@@ -2550,7 +2611,7 @@ class UserInputClass:
 
         self._calDisplayMonth(datetime.datetime(year=startYear, month=startMonth, day=1))
 
-        #Show the calendar
+        # Show the calendar
         self._TLP.ShowPopup(popupName)
 
         @event(self._calDayNumBtns, 'Released')
@@ -2600,8 +2661,8 @@ class UserInputClass:
         self._calDisplayMonth(dt)
 
     def _calDisplayMonth(self, dt):
-        #date = datetime.datetime object
-        #this will update the TLP with data for the month of the datetime.date
+        # date = datetime.datetime object
+        # this will update the TLP with data for the month of the datetime.date
 
         self._dtMap = {}
 
@@ -2613,28 +2674,28 @@ class UserInputClass:
             if index >= len(self._calDayNumBtns):
                 continue
             btnDayNum = self._calDayNumBtns[index]
-            btnDayAgenda= self._calDayAgendaBtns[index]
+            btnDayAgenda = self._calDayAgendaBtns[index]
 
-            #Save the datetime and map it to the buttons for later use
+            # Save the datetime and map it to the buttons for later use
             self._dtMap[date] = [btnDayNum, btnDayAgenda]
 
-            if date.month != self._currentMonth: #Not part of the month
+            if date.month != self._currentMonth:  # Not part of the month
                 newState = 1
                 newText = date.strftime('%d ')
-            else:#is part of the month
+            else:  # is part of the month
                 newState = 0
                 newText = date.strftime('%d ')
 
             agendaText = self._GetAgendaText(date)
 
-            #btnDayNum
+            # btnDayNum
             if btnDayNum.State != newState:
                 btnDayNum.SetState(newState)
 
             if btnDayNum.Text != newText:
                 btnDayNum.SetText(newText)
 
-            #btnDayAgenda
+            # btnDayAgenda
             if btnDayAgenda.State != newState:
                 btnDayAgenda.SetState(newState)
 
@@ -2652,10 +2713,10 @@ class UserInputClass:
                         name = item['name']
                         string = '{} - {}\n'.format(dt.strftime('%-I:%M%p'), name)
 
-                        #Make sure the string isnt too long
+                        # Make sure the string isnt too long
                         if self._maxAgendaWidth is not None:
                             if len(string) > self._maxAgendaWidth:
-                                string = string[:self._maxAgendaWidth-4] + '...\n'
+                                string = string[:self._maxAgendaWidth - 4] + '...\n'
 
                         result += string
 
@@ -2715,7 +2776,7 @@ class UserInputClass:
             'datetime': dt,
             'name': name,
             'meta': metaDict,
-            }
+        }
 
         self._calEvents.append(eventDict)
 
@@ -2723,7 +2784,7 @@ class UserInputClass:
         self._calDisplayMonth(dt)
 
     def _SaveCalData(self):
-        #Write the data to a file
+        # Write the data to a file
         saveItems = []
 
         for item in self._calEvents:
@@ -2752,7 +2813,7 @@ class UserInputClass:
                     'datetime': dt,
                     'name': saveItem['name'],
                     'meta': saveItem['meta'],
-                    }
+                }
 
                 self._calEvents.append(loadItem)
 
@@ -2785,7 +2846,7 @@ class UserInputClass:
                                         result.append(item)
                             else:
                                 result.append(item)
-                        else:#probably a datetime.date object
+                        else:  # probably a datetime.date object
                             result.append(item)
 
         return result
@@ -3102,7 +3163,6 @@ class UserInputClass:
         self._bool_btn_true.Host.ShowPopup(self._bool_popup_name)
 
 
-
 # Non-global variables **********************************************************
 class NonGlobal:
     '''
@@ -3129,7 +3189,8 @@ def hash_it(string=''):
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
 
-#Timer class (safer than recursive Wait objects per PD)
+
+# Timer class (safer than recursive Wait objects per PD)
 class Timer:
     def __init__(self, t, func):
         '''
@@ -3163,9 +3224,9 @@ class Timer:
                                 pass
                             else:
                                 time.sleep(self._t)
-                            if self._run: #The .Stop() method may have been called while this loop was sleeping
+                            if self._run:  # The .Stop() method may have been called while this loop was sleeping
                                 self._func()
-                            # print('exiting loop()')
+                                # print('exiting loop()')
                     except Exception as e:
                         print('Error in timer func={}\n{}'.format(self._func, e))
             except Exception as e:
@@ -3197,6 +3258,7 @@ class Timer:
         # To easily replace a Wait object
         self.Stop()
 
+
 def GetDatetimeKwargs(dt):
     '''
     This converts a datetime.datetime object to a dict.
@@ -3204,7 +3266,7 @@ def GetDatetimeKwargs(dt):
     :param dt: datetime.datetime
     :return: dict
     '''
-    d = {'year':dt.year,
+    d = {'year': dt.year,
          'month': dt.month,
          'day': dt.day,
          'hour': dt.hour,
@@ -3214,21 +3276,23 @@ def GetDatetimeKwargs(dt):
          }
     return d
 
+
 class Schedule:
     '''
     An easy class to call a function at a particular datetime.datetime
     '''
+
     def __init__(self):
         self._wait = None
 
     def Set(self, set_dt, func, *args, **kwargs):
-        #This will execute func when time == dt with args/kwargs
+        # This will execute func when time == dt with args/kwargs
 
         if self._wait is not None:
             self._wait.Cancel()
             self._wait = None
 
-        #Save the attributes
+        # Save the attributes
         self._dt = set_dt
         self._func = func
         self._args = args
@@ -3242,7 +3306,8 @@ class Schedule:
         self._wait = Wait(waitSeconds, self._callback)
 
     def _callback(self):
-        print('Schedule._callback, self.func={}, self.args={}, self.kwargs={},'.format(self._func, self._args, self._kwargs))
+        print('Schedule._callback, self.func={}, self.args={}, self.kwargs={},'.format(self._func, self._args,
+                                                                                       self._kwargs))
         print('Processor time =', time.asctime())
         if not self._args == ():
             if not self._kwargs == {}:
@@ -3256,7 +3321,6 @@ class Schedule:
                 self._func()
 
 
-
 def HandleConnection(*args, **kwargs):
     if UniversalConnectionHandler._defaultCH is None:
         newCH = UniversalConnectionHandler()
@@ -3268,8 +3332,9 @@ def HandleConnection(*args, **kwargs):
 
     UniversalConnectionHandler._defaultCH.maintain(*args, **kwargs)
 
+
 def ConnectionHandlerLogicalReset(interface):
-    #for backwards compatibility mostly
+    # for backwards compatibility mostly
     if interface in UniversalConnectionHandler._defaultCH._send_counters:
         UniversalConnectionHandler._defaultCH._send_counters[interface] = 0
     pass
@@ -3289,8 +3354,8 @@ def AddConnectionCallback(interface, callback):
     interface.Disconnected = callback
 
 
-
 statusButtons = {}
+
 
 def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
     if UniversalConnectionHandler._defaultCH is None:
@@ -3400,10 +3465,11 @@ class UniversalConnectionHandler:
                  interface,
                  keep_alive_query_cmd=None,
                  keep_alive_query_qual=None,
-                 poll_freq=5, #how many seconds between polls
-                 disconnect_limit=5, #how many missed queries before a 'Disconnected' event is triggered
-                 timeout=5*60, #After this many seconds, a client who has not sent any data to the server will be disconnected.
-                 connection_retry_freq=5, #how many seconds after a Disconnect event to try to do Connect
+                 poll_freq=5,  # how many seconds between polls
+                 disconnect_limit=5,  # how many missed queries before a 'Disconnected' event is triggered
+                 timeout=5 * 60,
+                 # After this many seconds, a client who has not sent any data to the server will be disconnected.
+                 connection_retry_freq=5,  # how many seconds after a Disconnect event to try to do Connect
                  ):
         '''
         This method will maintain the connection to the interface.
@@ -3463,14 +3529,14 @@ class UniversalConnectionHandler:
                 interface.Offline = self._get_controlscript_connection_callback(interface)
 
     def _maintain_serverEx_TCP(self, parent):
-        #save old handlers
+        # save old handlers
         if parent not in self._user_connected_handlers:
             self._user_connected_handlers[parent] = parent.Connected
 
-        if parent not in self. _user_disconnected_handlers:
+        if parent not in self._user_disconnected_handlers:
             self._user_disconnected_handlers[parent] = parent.Disconnected
 
-        #Create new handlers
+        # Create new handlers
         parent.Connected = self._get_serverEx_connection_callback(parent)
         parent.Disconnected = self._get_serverEx_connection_callback(parent)
 
@@ -3597,7 +3663,7 @@ class UniversalConnectionHandler:
 
     def _check_connection_handlers(self, interface):
         print('UCH._check_connection_handlers')
-        #if the user made their own connection handler, make sure our connection handler is called first
+        # if the user made their own connection handler, make sure our connection handler is called first
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
@@ -3610,7 +3676,8 @@ class UniversalConnectionHandler:
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
-        connection_handler = self._get_controlscript_connection_callback(interface) #This line also saves the current user handlers
+        connection_handler = self._get_controlscript_connection_callback(
+            interface)  # This line also saves the current user handlers
 
         self._connected_handlers[interface] = connection_handler
         self._disconnected_handlers[interface] = connection_handler
@@ -3646,7 +3713,7 @@ class UniversalConnectionHandler:
                 currentState = self.get_connection_status(interface)
                 print('currentState=', currentState)
                 if currentState is 'Connected':
-                    #We dont need to increment the send counter if we know we are disconnected
+                    # We dont need to increment the send counter if we know we are disconnected
                     self._send_counters[interface] += 1
                 print('new_send send_counter=', self._send_counters[interface])
 
@@ -3725,7 +3792,7 @@ class UniversalConnectionHandler:
     def _get_controlscript_connection_callback(self, interface):
         # generate a new function that includes the 'kind' of connection
 
-        #init some values
+        # init some values
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
@@ -3738,9 +3805,9 @@ class UniversalConnectionHandler:
         if interface not in self._user_disconnected_handlers:
             self._user_disconnected_handlers[interface] = None
 
-        #Get handler
+        # Get handler
 
-        #save user Connected handler
+        # save user Connected handler
         if isinstance(interface, extronlib.device.UIDevice) or isinstance(interface, extronlib.device.ProcessorDevice):
             callback = getattr(interface, 'Online')
         else:
@@ -3764,7 +3831,7 @@ class UniversalConnectionHandler:
         else:
             self._user_disconnected_handlers[interface] = None
 
-        #Create the new handler
+        # Create the new handler
         if (isinstance(interface, extronlib.device.ProcessorDevice) or
                 isinstance(interface, extronlib.device.UIDevice)):
 
@@ -3837,15 +3904,16 @@ class UniversalConnectionHandler:
 
             interface.StopListen()
 
-        elif isinstance(interface, extronlib.device.UIDevice) or isinstance(interface, extronlib.device.ProcessorDevice):
-            interface.Online =  None
+        elif isinstance(interface, extronlib.device.UIDevice) or isinstance(interface,
+                                                                            extronlib.device.ProcessorDevice):
+            interface.Online = None
             interface.Offline = None
 
         self._interfaces.remove(interface)
 
     def get_connection_status(self, interface):
-        #return 'Connected' or 'Disconnected'
-        #Returns None if this interface is not being handled by this UCH
+        # return 'Connected' or 'Disconnected'
+        # Returns None if this interface is not being handled by this UCH
         return self._connection_status.get(interface, None)
 
     def _get_serverEx_connection_callback(self, parent):
@@ -4021,7 +4089,7 @@ class UniversalConnectionHandler:
 
             self._log_connection_to_file(interface, state, kind)
 
-            #Do the user's callback function
+            # Do the user's callback function
             if state in ['Connected', 'Online']:
                 if interface in self._user_connected_handlers:
                     if callable(self._user_connected_handlers[interface]):

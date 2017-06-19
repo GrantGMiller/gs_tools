@@ -1,6 +1,7 @@
 import exchange_interface
 import exchange_credentials
-from base64 import b64decode
+import datetime
+import time
 
 exchange = exchange_interface.Exchange(
     server='outlook.office365.com',
@@ -11,11 +12,15 @@ exchange = exchange_interface.Exchange(
     service='Office365',
 )
 
-exchange.UpdateCalendar()
-print()
-for calItem in exchange.GetEventAtTime():
-    print(calItem)
+folderPath = 'C:\\Users\\gmiller\\Desktop\\Grants GUIs\\GS Modules\\SMD Manager\\Test Files\\'
 
-print('GetNextCalItems')
-for item in exchange.GetNextCalItems():
-    print(item)
+exchange.UpdateCalendar()
+print('GetEventAtTime')
+for calItem in exchange.GetEventAtTime(datetime.datetime(year=2017, month=6, day=19, hour=10)):
+    print(calItem)
+    attachments = calItem.GetAttachments()
+    for attachment in attachments:
+        attachment.SaveToPath('{}{}.png'.format(folderPath, int(time.time())))
+#print('GetNextCalItems')
+#for item in exchange.GetNextCalItems():
+    #print(item)

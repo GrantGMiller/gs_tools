@@ -1,20 +1,28 @@
+'''
+Based on the module created by David Gonzalez (dgonzalez@extron.com)
+Re-worked by Grant Miller (gmiller@extron.com)
+'''
+
+
 import urllib.request, re
 from base64 import b64encode, b64decode
 import datetime
 import time
+
 try:
     from extronlib.system import File
 except:
     File = open
 
 offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
-offsetHours = offsetSeconds / 60 / 60 *-1
+offsetHours = offsetSeconds / 60 / 60 * -1
 MY_TIME_ZONE = offsetHours
 
 print('MY_TIME_ZONE=UTC{}'.format(MY_TIME_ZONE))
 
+
 def ConvertTimeStringToDatetime(string):
-    #print('ConvertTimeStringToDatetime\nstring=', string)
+    # print('ConvertTimeStringToDatetime\nstring=', string)
     year, month, etc = string.split('-')
     day, etc = etc.split('T')
     hour, minute, etc = etc.split(':')
@@ -26,32 +34,33 @@ def ConvertTimeStringToDatetime(string):
         hour=int(hour),
         minute=int(minute),
         second=int(second),
-        )
+    )
 
     dt = AdjustDatetimeForTimezone(dt, fromZone='Exchange')
 
     return dt
 
+
 def ConvertDatetimeToTimeString(dt):
     dt = AdjustDatetimeForTimezone(dt, fromZone='Mine')
     return dt.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+
 def AdjustDatetimeForTimezone(dt, fromZone):
-    delta = datetime.timedelta(hours=MY_TIME_ZONE)
+    delta = datetime.timedelta(hours=abs(MY_TIME_ZONE))
     if fromZone == 'Mine':
-        dt = dt - delta
-    elif fromZone == 'Exchange':
         dt = dt + delta
+    elif fromZone == 'Exchange':
+        dt = dt - delta
 
     return dt
-
 
 
 class _CalendarItem:
     def __init__(self, startDT, endDT, data, parentExchange):
         if data is None:
             data = {}
-        #print('_CalendarItem data=', data)
+        # print('_CalendarItem data=', data)
         self._data = data.copy()  # dict like {'ItemId': 'jasfsd', 'Subject': 'SuperMeeting', ...}
         self._startDT = startDT
         self._endDT = endDT
@@ -70,23 +79,25 @@ class _CalendarItem:
             return self._data.get(key, None)
 
     def __contains__(self, dt):
-        if isinstance(dt, datetime.date):
-            if self._startDT.year == dt.year and \
-                    self._startDT.month == dt.month and \
-                    self._startDT.day == dt.day:
+        # Note isinstance(datetime.datetime, datetime.date) == True
+        # Because the point in time exist in that date
+        if isinstance(dt, datetime.datetime):
+            if dt >= self._startDT and dt <= self._endDT:
                 return True
-
-            elif self._endDT.year == dt.year and \
-                    self._endDT.month == dt.month and \
-                    self._endDT.day == dt.day:
-                return True
-
             else:
                 return False
 
-        elif isinstance(dt, datetime.datetime):
-            if dt >= self._startDT and dt <= self._endDT:
+        elif isinstance(dt, datetime.date):
+            if self._startDT.year == dt.year and \
+                            self._startDT.month == dt.month and \
+                            self._startDT.day == dt.day:
                 return True
+
+            elif self._endDT.year == dt.year and \
+                            self._endDT.month == dt.month and \
+                            self._endDT.day == dt.day:
+                return True
+
             else:
                 return False
 
@@ -111,10 +122,14 @@ class _CalendarItem:
         return False
 
     def __str__(self):
-        return '<CalendarItem object: Start={}, End={}, Subject={}, HasAttachements={}>'.format(self.Get('Start'), self.Get('End'), self.Get('Subject'), self.HasAttachments())
+        return '<CalendarItem object: Start={}, End={}, Subject={}, HasAttachements={}>'.format(self.Get('Start'),
+                                                                                                self.Get('End'),
+                                                                                                self.Get('Subject'),
+                                                                                                self.HasAttachments())
 
     def __repr__(self):
         return str(self)
+
 
 class _Attachment:
     def __init__(self, AttachmentId, parentExchange):
@@ -142,13 +157,11 @@ class _Attachment:
 
     def SaveToPath(self, path):
         with File(path, mode='wb') as file:
-            file.write(self.GetContent().encode())
+            file.write(self.GetContent())
 
 
 class Exchange():
-
-
-    #Exchange methods
+    # Exchange methods
     def __init__(self, server, username, password, service):
         self.service = service
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
@@ -172,7 +185,7 @@ class Exchange():
     # --------------------------------------------------EWS Services--------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
     def _GetSoapHeader(self, account):
-        #This should only need to be called once to create the header that will be used in the XML request from now on
+        # This should only need to be called once to create the header that will be used in the XML request from now on
         if account is None:
             xmlAccount = """<t:RequestServerVersion Version="Exchange2007_SP1" />"""
         else:
@@ -183,7 +196,6 @@ class Exchange():
                                 </t:ConnectingSID>
                             </t:ExchangeImpersonation>""".format(account)
         return xmlAccount
-
 
     def _UpdateFolderIdAndChangeKey(self):
         # Requests Service for ID of calendar folder and change key
@@ -265,26 +277,28 @@ class Exchange():
                       </soap:Body>
                     </soap:Envelope>""".format(self._soapHeader, self._startOfWeek, self._endOfWeek, self._folderID,
                                                self._changeKey)
-        #print('xtmbody=', xmlbody)
+        # print('xtmbody=', xmlbody)
         response = self._SendHttp(xmlbody)
-        #print('response=', response)
-        #response now holds all the calendar events between startOfWeek and endOfWeek
+        # print('response=', response)
+        # response now holds all the calendar events between startOfWeek and endOfWeek
 
         regexCalendarItem = re.compile('<t:CalendarItem>.*?<\/t:CalendarItem>')
 
-        regexItemId = re.compile('<t:ItemId Id="(.*?)" ChangeKey="(.*?)"/>') #group(1) = itemID, group(2) = changeKey #within a CalendarItem
-        regexSubject = re.compile('<t:Subject>(.*?)</t:Subject>') #within a CalendarItem
-        regexHasAttachments = re.compile('<t:HasAttachments>(.{4,5})</t:HasAttachments>') #within a CalendarItem
-        regexOrganizer = re.compile('<t:Organizer>.*<t:Name>(.*?)</t:Name>.*</t:Organizer>') #group(1)=Name #within a CalendarItem
-        regexStartTime = re.compile('<t:Start>(.*?)</t:Start>') #group(1) = start time string #within a CalendarItem
-        regextEndTime = re.compile('<t:End>(.*?)</t:End>')#group(1) = end time string #within a CalendarItem
+        regexItemId = re.compile(
+            '<t:ItemId Id="(.*?)" ChangeKey="(.*?)"/>')  # group(1) = itemID, group(2) = changeKey #within a CalendarItem
+        regexSubject = re.compile('<t:Subject>(.*?)</t:Subject>')  # within a CalendarItem
+        regexHasAttachments = re.compile('<t:HasAttachments>(.{4,5})</t:HasAttachments>')  # within a CalendarItem
+        regexOrganizer = re.compile(
+            '<t:Organizer>.*<t:Name>(.*?)</t:Name>.*</t:Organizer>')  # group(1)=Name #within a CalendarItem
+        regexStartTime = re.compile('<t:Start>(.*?)</t:Start>')  # group(1) = start time string #within a CalendarItem
+        regextEndTime = re.compile('<t:End>(.*?)</t:End>')  # group(1) = end time string #within a CalendarItem
 
         for matchCalItem in regexCalendarItem.finditer(response):
-            #go thru the resposne and find any CalendarItems.
-            #parse their data and create CalendarItem objects
-            #store CalendarItem objects in self
+            # go thru the resposne and find any CalendarItems.
+            # parse their data and create CalendarItem objects
+            # store CalendarItem objects in self
 
-            #print('\nmatchCalItem.group(0)=', matchCalItem.group(0))
+            # print('\nmatchCalItem.group(0)=', matchCalItem.group(0))
 
             data = {}
             startDT = None
@@ -321,23 +335,22 @@ class Exchange():
         :return:
         '''
 
-        #Remove any CalendarItems that have ended in the past
+        # Remove any CalendarItems that have ended in the past
         nowDT = datetime.datetime.now()
         for sub_calItem in self._calendarItems.copy():
             endDT = sub_calItem.Get('End')
             if endDT < nowDT:
                 self._calendarItems.remove(sub_calItem)
 
-        #Remove any old items that have the same ItemId
+        # Remove any old items that have the same ItemId
         itemId = calItem.Get('ItemId')
 
         for sub_calItem in self._calendarItems.copy():
             if sub_calItem.Get('ItemId') == itemId:
                 self._calendarItems.remove(sub_calItem)
 
-        #Add CalItem to self
+        # Add CalItem to self
         self._calendarItems.append(calItem)
-
 
     def CreateCalendarEvent(self, subject, body, startDT=None, endDT=None):
 
@@ -387,7 +400,6 @@ class Exchange():
             endTimeString = ConvertDatetimeToTimeString(newEndDT)
             timeUpdateXML += '<t:End>{}</t:End>'.format(endTimeString)
 
-
         xmlBody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
                            xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
@@ -411,7 +423,8 @@ class Exchange():
                           </m:ItemChanges>
                         </m:UpdateItem>
                       </soap:Body>
-                    </soap:Envelope> """.format(self._soapHeader, calItem.Get('ItemId'), calItem.Get('ChangeKey'), timeUpdateXML)
+                    </soap:Envelope> """.format(self._soapHeader, calItem.Get('ItemId'), calItem.Get('ChangeKey'),
+                                                timeUpdateXML)
 
         self._SendHttp(xmlBody)
 
@@ -432,7 +445,7 @@ class Exchange():
                           </m:ItemIds>
                         </m:DeleteItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self._soapHeader,  calItem.Get('ItemId'), calItem.Get('ChangeKey'))
+                    </soap:Envelope>""".format(self._soapHeader, calItem.Get('ItemId'), calItem.Get('ChangeKey'))
 
         request = self._SendHttp(xmlBody)
 
@@ -470,12 +483,11 @@ class Exchange():
             itemName = regExName.search(request).group(1)
             itemContent = regExContent.search(request).group(1)
 
-            attachmentObject._content = itemContent
+            attachmentObject._content = b64decode(itemContent)
             attachmentObject.Filename = itemName
 
-
     def _GetAttachmentIDs(self, calItem):
-        #returns a list of attachment IDs
+        # returns a list of attachment IDs
 
         itemId = calItem.Get('ItemId')
         regExAttKey = re.compile(r'AttachmentId Id=\"(.+)\"')
@@ -533,8 +545,9 @@ class Exchange():
         return self._calendarItems.copy()
 
     def GetEventAtTime(self, dt=None):
-        #dt = datetime.date or datetime.datetime
+        # dt = datetime.date or datetime.datetime
         # return a list of events that occur on datetime.date or at datetime.datetime
+
         if dt is None:
             dt = datetime.datetime.now()
 
@@ -547,7 +560,7 @@ class Exchange():
         return events
 
     def GetNowCalItems(self):
-        #returns list of calendar items happening now
+        # returns list of calendar items happening now
 
         returnCalItems = []
 
@@ -560,24 +573,24 @@ class Exchange():
         return returnCalItems
 
     def GetNextCalItems(self):
-        #return a list CalendarItems
-        #will not return events happening now. only the nearest future events
-        #if multiple events start at the same time, all CalendarItems will be returned
+        # return a list CalendarItems
+        # will not return events happening now. only the nearest future event(s)
+        # if multiple events start at the same time, all CalendarItems will be returned
 
         nowDT = datetime.datetime.now()
 
-        nextDT = None
+        nextStartDT = None
         for calItem in self._calendarItems.copy():
             startDT = calItem.Get('Start')
-            if startDT > nowDT: #its in the future
-                if nextDT is None or startDT < nextDT: #its sooner than the previous soonest one. (Wha!?)
-                    nextDT = startDT
+            if startDT > nowDT:  # its in the future
+                if nextStartDT is None or startDT < nextStartDT:  # its sooner than the previous soonest one. (Wha!?)
+                    nextStartDT = startDT
 
-        if nextDT is None:
-            return [] #no events in the future
+        if nextStartDT is None:
+            return []  # no events in the future
         else:
             returnCalItems = []
             for calItem in self._calendarItems.copy():
-                if nextDT in calItem:
+                if nextStartDT == calItem.Get('Start'):
                     returnCalItems.append(calItem)
             return returnCalItems

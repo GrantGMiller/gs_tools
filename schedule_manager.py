@@ -20,8 +20,7 @@ class ScheduleManager():
         # *args > arguments to pass to callback function
         # **kwargs > keyword arguments to pass to callback function
 
-        print('args={}\ntype={}'.format(args, type(args)))
-        print('kwargs={}\ntype={}'.format(kwargs, type(kwargs)))
+        print('ScheduleManager.Add({},{})'.format(args, kwargs))
 
         # Determine the day(s)
         Days = []

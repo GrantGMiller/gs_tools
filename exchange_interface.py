@@ -481,6 +481,7 @@ class Exchange():
         responseCode = regExReponse.search(request).group(1)
         if responseCode == 'NoError':  # Handle errors sent by the server
             itemName = regExName.search(request).group(1)
+            itemName = itemName.replace(' ','_') #remove ' ' chars because dont work on linux
             itemContent = regExContent.search(request).group(1)
 
             attachmentObject._content = b64decode(itemContent)

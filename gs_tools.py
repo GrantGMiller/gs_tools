@@ -1433,17 +1433,21 @@ def PrintProgramLog():
     return print
 
 
-class PersistantVariables():
+class PersistentVariables():
     '''
     This class is used to easily manage non-volatile variables using the extronlib.system.File class
     '''
 
-    def __init__(self, filename):
+    def __init__(self, filename=None):
         '''
 
         :param filename: string like 'data.json' that will be used as the file name for the File class
         '''
+        if filename is None:
+            filename = 'persistent_variables.json'
         self.filename = filename
+
+        self._valueChangesCallback = None
 
         if not File.Exists(filename):
             # If the file doesnt exist yet, create a blank file
@@ -1451,25 +1455,31 @@ class PersistantVariables():
             file.write(json.dumps({}))
             file.close()
 
-    def Set(self, varName, varValue):
+    def Set(self, varName, newValue):
         '''
         This will save the variable to non-volatile memory with the name varName
         :param varName: str that will be used to identify this variable in the future with .Get()
-        :param varValue: any value hashable by the json library
+        :param newValue: any value hashable by the json library
         :return:
         '''
         # load the current file
-        file = File(self.filename, mode='rt')
-        data = json.loads(file.read())
-        file.close()
+        with File(self.filename, mode='rt') as file:
+            data = json.loads(file.read())
 
-        # Add/change the value
-        data[varName] = varValue
+        #get the old value
+        oldValue = data.get(varName, None)
+
+        #if the value is different do the callback
+        if oldValue != newValue:
+            if callable(self._valueChangesCallback):
+                self._valueChangesCallback(varName, newValue)
+
+        # Add/update the new value
+        data[varName] = newValue
 
         # Write new file
-        file = File(self.filename, mode='wt')
-        file.write(json.dumps(data))
-        file.close()
+        with File(self.filename, mode='wt') as file:
+            file.write(json.dumps(data))
 
     def Get(self, varName):
         '''
@@ -1492,6 +1502,14 @@ class PersistantVariables():
             self.Set(varName, varValue)
 
         return varValue
+
+    @property
+    def ValueChanges(self):
+        return self._valueChangesCallback
+
+    @ValueChanges.setter
+    def ValueChanges(self, callback):
+        self._valueChangesCallback = callback
 
 
 RemoteTraceServer = None

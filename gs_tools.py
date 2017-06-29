@@ -24,9 +24,10 @@ import hashlib
 import datetime
 import calendar
 import base64
+import re
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -773,6 +774,8 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
             old_proc = cls._processor_device_instances[device_alias]
             return old_proc
 
+    _allProcessorDevices = []
+
     def __init__(self, *args, **kwargs):
         print('ProcessorDevice.__init__\n self={}\n args={}, kwargs={}'.format(self, args, kwargs))
 
@@ -784,6 +787,10 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
         else:
             # this processor has been init before. do nothing
             pass
+
+        if self not in self._allProcessorDevices:
+            StartVTLPServer(self.IPAddress, 8080)
+            self._allProcessorDevices.append(self)
 
     def port_in_use(self, port_str):
         print('ProcessorDevice.port_in_use\n self={}\n port_str={}\n\n self._serial_ports_in_use={}'.format(self,
@@ -809,6 +816,8 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
 class UIDevice(extronlib.device.UIDevice):
 
+    _allUIDevices = []
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -828,6 +837,9 @@ class UIDevice(extronlib.device.UIDevice):
 
         self._PageHistory = []  # hold last X pages
         self._PageOffset = 0  # 0 = last entry in
+
+        if self not in self._allUIDevices:
+            self._allUIDevices.append(self)
 
     def ShowPopup(self, popup, duration=0):
         #print('ShowPopup popup={}, duration={}'.format(popup, duration))
@@ -956,6 +968,9 @@ class UIDevice(extronlib.device.UIDevice):
     def __repr__(self):
         return str(self)
 
+    #def __setattr__(self, *args, **kwargs):
+        #print('UIDevice.__setattr__:', args, kwargs)
+        #super().__setattr__(*args, **kwargs)
 
 # extronlib *********************************************************************
 
@@ -4834,5 +4849,64 @@ def _string_to_bytes(text):
 
 def _bytes_to_string(binary):
     return "".join(chr(b) for b in binary)
+
+def StartVTLPServer(hostIPAddress, hostIPPort):
+    print('StartVTLPServer')
+    tlpServer = EthernetServerInterfaceEx(hostIPPort)
+
+    regexGUID = re.compile('var\/nortxe\/gve\/web\/vtlp\/(.*?)\/layout\.json')
+
+
+
+    @event(tlpServer, 'Connected')
+    def tlpServerConnectionEvent(client, state):
+        #get the tlp links
+        allTLPInfo = []
+        for tlp in UIDevice._allUIDevices:
+            layout = tlp._layoutFile
+            match = regexGUID.search(layout)
+            if match:
+                guid = match.group(1)
+                link = 'https://{}/web/vtlp/{}/vtlp.html'.format(hostIPAddress, guid)
+            allTLPInfo.append((tlp.DeviceAlias, tlp.IPAddress, link))
+
+        print('allTLPInfo=', allTLPInfo)
+
+        #create the table that will be put in the html
+        table = '''<table>
+                        <tr>
+                            <th>Alias</th>
+                            <th>IP Address</th>
+                            <th>Link</th>
+                        </tr>\r'''
+        for link in allTLPInfo:
+            table += '''<tr>
+                            <td>{}:</td>
+                            <td>{}</td>
+                            <td><a href={}>{}</a></td>
+                        </tr>\r'''.format(link[0], link[1], link[2], link[2])
+        table += '</table>\r'
+
+        #create the html
+        html = WebPage='''\
+HTTP/1.1 200 OK
+<!DOCTYPE html>
+    <html>
+        <title>Extron Control</title>
+        <body>
+            <h1>Welcome to Extron Control</h1>
+            <br>
+            Select a link below
+            <br><br>
+            {}
+        </body>
+</html>
+'''.format(table)
+
+        #send html to client and disconnect(disconnect lets the client knowo the page is done loading)
+        client.Send(html)
+        client.Disconnect()
+
+    tlpServer.StartListen()
 
 print('End  GST')

@@ -11,6 +11,11 @@ from extronlib.interface import (EthernetClientInterface, SerialInterface)
 from extronlib.system import Wait, ProgramLog, File, Ping, RFile, Clock
 from extronlib.ui import Button, Level
 
+try:
+    import aes_tools
+except:
+    pass
+
 import json
 import itertools
 import time
@@ -21,7 +26,7 @@ import calendar
 import base64
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -138,11 +143,31 @@ class Button(extronlib.ui.Button):
 
         self.Released = NewFunc
 
-    def SetText(self, text):
+    def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
         if not isinstance(text, str):
             text = str(text)
-        super().SetText(text)
+
         self.Text = text
+
+        displayText = text
+        if limitLen is not None:
+            if len(displayText) > limitLen:
+
+                #chop off extra text
+                if justify == 'Right': #chop off the left
+                    displayText = displayText[-limitLen:]
+
+                elif justify == 'Left': #chop off the left
+                    displayText = displayText[:limitLen]
+
+                #add elipses if needed
+                if elipses is True:
+                    if justify == 'Left':
+                        displayText = displayText[:-3] + '...'
+                    elif justify == 'Right':
+                        displayText = '...' + displayText[3:]
+
+        super().SetText(displayText)
 
     def GetText(self):
         '''
@@ -213,9 +238,30 @@ class Label(extronlib.ui.Label):
         super().__init__(*args, **kwargs)
         self.Text = ''
 
-    def SetText(self, text):
-        super().SetText(text)
+    def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
+        #justify='Left' means chop off the right side
+        #justify='Right' means chop off the left side
         self.Text = text
+
+        displayText = text
+        if limitLen is not None:
+            if len(displayText) > limitLen:
+
+                #chop off extra text
+                if justify == 'Right': #chop off the left
+                    displayText = displayText[-limitLen:]
+
+                elif justify == 'Left': #chop off the left
+                    displayText = displayText[:limitLen]
+
+                #add elipses if needed
+                if elipses is True:
+                    if justify == 'Left':
+                        displayText = displayText[:-3] + '...'
+                    elif justify == 'Right':
+                        displayText = '...' + displayText[3:]
+
+        super().SetText(displayText)
 
     def AppendText(self, text):
         self.SetText(self.Text + text)
@@ -250,7 +296,19 @@ class Wait(extronlib.system.Wait):
 
 
 class File(extronlib.system.File):
-    pass
+
+    @classmethod
+    def ListDirWithSub(cls, dir='/'):
+        allFiles = []
+        thisListDir = cls.ListDir(dir)
+        print('dir={}, thisListDir={}'.format(dir, thisListDir))
+        for item in thisListDir:
+            if item.endswith('/'):
+                allFiles.extend(cls.ListDirWithSub(dir+item))
+            else:
+                allFiles.append(dir+item)
+
+        return allFiles
 
 
 # extronlib.interface **************************************************************
@@ -269,7 +327,10 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
         self._keep_alive_Timer = None
 
     def __str__(self):
-        return '{}, IPAddress={}, IPPort={}'.format(super().__str__(), self.IPAddress, self.IPPort)
+        return '<gs_tools.EthernetClientInterface, IPAddress={}, IPPort={}, ServicePort={}>'.format(self.IPAddress, self.IPPort, self.ServicePort)
+
+    def __repr__(self):
+        return str(self)
 
     def __iter__(self):
         '''
@@ -340,48 +401,51 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
         super().Send(data)
 
 
-def encrypt(key, clearText):
-    enc = []
-    for i in range(len(clearText)):
-        key_c = key[i % len(key)]
-        enc_c = chr((ord(clearText[i]) + ord(key_c)) % 256)
-        enc.append(enc_c)
-    return base64.urlsafe_b64encode("".join(enc).encode()).decode()
-
-
-def decrypt(key, encryptedText):
-    dec = []
-    encryptedText = base64.urlsafe_b64decode(encryptedText).decode()
-    for i in range(len(encryptedText)):
-        key_c = key[i % len(key)]
-        dec_c = chr((256 + ord(encryptedText[i]) - ord(key_c)) % 256)
-        dec.append(dec_c)
-    return "".join(dec)
-
-
 class EthernetClientInterfaceEncrypted(EthernetClientInterface):
-    def __init(self, *args, **kwargs):
+    '''
+    This class uses AES 256 bit encryption
+    '''
+    def __init__(self, *args, **kwargs):
         self._rxBuffer = ''
+
+        self._cipher = None
+
         super().__init__(*args, **kwargs)
-        self._encryptionKey = '{}:{}'.format(self.IPAddress, self.IPPort)
+        self._rxDataDecrypted = None
+
+    def SetEncryptionKey(self, key):
+        self._cipher = aes_tools.AES_Cipher(key)
+        self._encryptionKey = key
+        print(self, 'self._cipher=', self._cipher)
+        print(self, 'self._encryptionKey=', self._encryptionKey)
 
     def Send(self, data):
-        if isinstance(data, bytes):
-            data = date.decode()
-
-        encryptedData = encrypt(self._encryptionKey, data)
-
-        super().Send(encryptedData)
-
-    def _ReceiveData(self, interface, data):
-        self._rxBuffer += data.decode()
-        try:
-            decryptedData = decrypt(self._encryptionKey, self._rxBuffer)
-            if callable(self.ReceiveData):
-                self.ReceiveData(self, decryptedData)
-        except Exception as e:
-            # probably have not received the full encrypted string
+        print('EthernetClientInterfaceEncrypted.Send(data={})'.format(data))
+        if self._cipher:
+            data = self._cipher.encrypt(data)
             pass
+        print('sending encrypted data={}'.format(data))
+        super().Send(data)
+
+    def Decrypt(self, data):
+        if self._cipher:
+            data = self._cipher.decrypt(data)
+            pass
+        return data
+
+    @property
+    def ReceiveDataDecrypted(self):
+        return _rxDataDecrypted
+
+    @ReceiveDataDecrypted.setter
+    def ReceiveDataDecrypted(self, func):
+        def newRx(interface, data):
+            data = self.Decrypt(data)
+            func(interface, data)
+        self._rxDataDecrypted = newRx
+        self.ReceiveData = newRx
+
+
 
 
 def get_parent(client_obj):
@@ -744,7 +808,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
 
 class UIDevice(extronlib.device.UIDevice):
-    # test
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -766,7 +830,7 @@ class UIDevice(extronlib.device.UIDevice):
         self._PageOffset = 0  # 0 = last entry in
 
     def ShowPopup(self, popup, duration=0):
-        print('ShowPopup popup={}, duration={}'.format(popup, duration))
+        #print('ShowPopup popup={}, duration={}'.format(popup, duration))
         self._DoShowPopup(popup, duration)
 
         if popup in self._exclusive_modals:
@@ -883,7 +947,14 @@ class UIDevice(extronlib.device.UIDevice):
     def SetVisible(self, id, state):
         for btn in Button.AllButtons:
             if btn.ID == id:
-                btn.SetVisible(state)
+                if btn.Host == self:
+                    btn.SetVisible(state)
+
+    def __str__(self):
+        return '<gs_tools.UIDevice object DeviceAlias={}, IPAddress={}>'.format(self.DeviceAlias, self.IPAddress)
+
+    def __repr__(self):
+        return str(self)
 
 
 # extronlib *********************************************************************
@@ -1449,9 +1520,12 @@ class PersistentVariables():
 
         self._valueChangesCallback = None
 
-        if not File.Exists(filename):
+        self._CreateFileIfMissing()
+
+    def _CreateFileIfMissing(self):
+        if not File.Exists(self.filename):
             # If the file doesnt exist yet, create a blank file
-            file = File(filename, mode='wt')
+            file = File(self.filename, mode='wt')
             file.write(json.dumps({}))
             file.close()
 
@@ -1462,6 +1536,8 @@ class PersistentVariables():
         :param newValue: any value hashable by the json library
         :return:
         '''
+        self._CreateFileIfMissing()
+
         # load the current file
         with File(self.filename, mode='rt') as file:
             data = json.loads(file.read())
@@ -1487,6 +1563,7 @@ class PersistentVariables():
         :param varName: name of the variable that was used with .Set()
         :return:
         '''
+        self._CreateFileIfMissing()
         # If the varName does not exist, return None
 
         # load the current file
@@ -2343,7 +2420,7 @@ class ScrollingTable():
         dataIndex = rowIndex + self._current_row_offset
         return self._data_rows[dataIndex]
 
-    def get_row_data(self, whereDict):
+    def get_row_data(self, where_dict):
         # returns a list of dicts that match whereDict
         result = []
 
@@ -2369,54 +2446,23 @@ class ScrollingTable():
         self._current_row_offset = 0
         self._refresh_Wait.Restart()
 
-    def sort_by_column(self, col_number):
-        if ScrollingTable_debug and debug: print('ScrollingTable sort_by_column(col_number={})'.format(col_number))
-        if ScrollingTable_debug and debug: print('self._data_rows=', self._data_rows)
-        all_values = []
+    def sort_by_column_list(self, colNumberList, reverse=False):
+        colHeaderList = []
+        for colNumber in colNumberList:
+            colHeaderList.append(self._table_header_order[colNumber])
+        print('colHeaderList=', colHeaderList)
 
-        col_header = self._table_header_order[col_number]
+        print('sort_by_column_list before=', self._data_rows)
+        self._data_rows = SortListOfDictsByKeys(self._data_rows, colHeaderList, reverse)
+        print('sort_by_column_list after=', self._data_rows)
 
-        for row in self._data_rows:
-            if col_header in row:
-                all_values.append(row[col_header])
+        self._refresh_Wait.Restart()
 
-        # We now have all the row values in all_values
-        try:
-            all_values.sort()  # Sort them
-        except Exception as e:
-            print('ScrollingTable.sort_by_column ERROR\n {}'.format(e))
-
-        # We now have all the values sorted, but there may be duplicats
-        all_values_no_dup = []
-        for value in all_values:
-            if value not in all_values_no_dup:
-                all_values_no_dup.append(value)
-
-        all_values = all_values_no_dup
-        # We now have all the sorted values with no duplicates
-
-        new_rows = []
-        old_rows = copy.copy(self._data_rows)  # dont want to modify the real data yet. in case this method crashes
-        temp_rows = copy.copy(old_rows)  # dont want to change a list while interating thru it
-
-        for this_value in all_values:
-            for row in temp_rows:
-                index = old_rows.index(row)
-                if col_header in row:
-                    if row[col_header] == this_value:
-                        move_row = old_rows.pop(index)
-                        new_rows.append(move_row)
-
-            # reset temp_rows
-            temp_rows = copy.copy(old_rows)
-
-        # new_rows now contains all the row data from the sorted values
-        # new_rows may be missing some rows that did not have col_header
-
-        # old_rows contains any leftovers, move them to new_rows
-        new_rows.extend(old_rows)
-        if ScrollingTable_debug and debug: print('sorted new_rows=', new_rows)
-        self._data_rows = new_rows
+    def sort_by_column(self, col_number, reverse=False):
+        '''
+        '''
+        key = self._table_header_order[col_number]
+        self._data_rows = SortListDictByKey(self._data_rows, key, reverse)
         self._refresh_Wait.Restart()
 
     def register_scroll_level(self, level):
@@ -2484,6 +2530,232 @@ class UserInputClass:
 
         self._kb_feedback_btn = None
         self._kb_text_feedback = None
+
+    def setup_file_explorer(self,
+            lblCurrentDirectory=None,
+            btnScrollUp=None,
+            btnScrollDown=None,
+            lvlScrollFeedback=None,
+            lblScrollText=None,
+            btnNavUp=None,
+
+            lblMessage=None,
+            btnClosePopup=None,
+            popupName=None,
+            limitStringLen=25,
+            btnSubmit=None,
+            ):
+
+        self._file_explorer_lblMessage = lblMessage
+        self._file_explorer_popupName = popupName
+        self._btnSubmit = btnSubmit
+
+        self._dirNav = DirectoryNavigationClass(
+                 lblCurrentDirectory,
+                 btnScrollUp,
+                 btnScrollDown,
+                 lvlScrollFeedback,
+                 lblScrollText,
+                 btnNavUp,
+                 limitStringLen=limitStringLen,
+                 lblMessage=lblMessage,
+                 )
+
+        self._file_explorer_filename = None
+        self._file_explorer_filepath = None
+        self._file_explorer_getFileCallback = None
+
+        self._dirNav.FileSelected = self._file_explorer_fileSelectedCallback
+
+        if btnClosePopup:
+            @event(btnClosePopup, 'Released')
+            def btnClosePopupEvent(button, state):
+                btnClosePopup.Host.HidePopup(self._file_explorer_popupName)
+
+
+    def _file_explorer_fileSelectedCallback(self, dirNav, path, passthru=None):
+        self._file_explorer_filepath = path
+        self._file_explorer_filename = path.split('/')[-1]
+
+        if callable(self._file_explorer_getFileCallback):
+            self._file_explorer_getFileCallback(self, path, self._file_explorer_passthru)
+
+        if self._file_explorer_feedback_btn is not None:
+            self._file_explorer_feedback_btn.SetText(self._file_explorer_filename)
+
+        if self._file_explorer_popupName is not None:
+            self._TLP.HidePopup(self._file_explorer_popupName)
+
+    def file_explorer_register_row(self, *args, **kwargs):
+        '''
+        Example:
+        for rowNumber in range(0, 7+1):
+            dir_register_row.RegisterRow(
+                rowNumber=rowNumber,
+                btnIcon=Button(ui, 2000+rowNumber),
+                btnSelection=Button(ui, 1000+rowNumber, PressFeedback='State'),
+        )
+        '''
+        self._dirNav.RegisterRow(*args, **kwargs)
+
+    def get_file(self,
+                data=None,
+                callback=None,
+                feedback_btn=None,
+                passthru=None,
+                message=None,
+                ):
+
+        if data is None:
+            data = File.ListDirWithSub()
+
+        self._dirNav.UpdateData(data)
+        self._file_explorer_getFileCallback = callback
+        self._file_explorer_feedback_btn = feedback_btn
+        self._file_explorer_passthru = passthru
+
+        if self._file_explorer_lblMessage is not None and message is not None:
+            self._file_explorer_lblMessage.SetText(message)
+
+        if self._btnSubmit:
+            self._btnSubmit.SetVisible(False)
+
+        if self._file_explorer_popupName is not None:
+            Wait(0.1, lambda: self._TLP.ShowPopup(self._file_explorer_popupName))
+
+    def make_new_directory(self,
+                data=None,
+                callback=None,
+                passthru=None,
+                makeDir=False, #whether to actually create the dir, False will just return the new path to the user, True will actually create the dir in the internal filesystem
+                ):
+        if data is None:
+            data = File.ListDirWithSub()
+
+        def getNewDirMasterDirectory(input, value, passthru2=None):
+            newFolderName = passthru2
+            newMasterDir = value
+
+            if makeDir == True:
+                File.MakeDir(value+passthru2)
+
+            if callable(callback):
+                callback(self, value+passthru2, passthru)
+
+        def getNewDirNameCallback(input, value, passthru3=None):
+            newFolderName = value
+
+            #let the user choose which master directory to put this sub directory in
+            self.get_directory(
+                data=data,
+                callback=getNewDirMasterDirectory,
+                feedback_btn=None,
+                passthru=newFolderName,
+                message='Choose a master folder.'.format(newFolderName),
+                )
+
+        self.get_keyboard(
+            kb_popup_name=self._kb_popup_name,
+            callback=getNewDirNameCallback, # function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            password_mode=False,
+            text_feedback=None,  # button()
+            passthru=None,  # any object that you want to also come thru the callback
+            message='Enter a new name for the folder.',
+            )
+
+    def make_new_file(self,
+                data=None, #list of filePath as str, or None means use the IPCP internal file system
+                callback=None,
+                feedback_btn=None,
+                passthru=None,
+                extension=None, #'.json', '.dat', etc...
+                ):
+        '''Use this method to create a new filePath and let the user choose the name and which directory to save it in
+        returns: path to the new file. THe user will have to use File(path, mode='wt') to actually write data to the file
+        return type: str (example: '/folder1/subfolder2/filename.txt')
+        '''
+        if data is None:
+            data = File.ListDirWithSub()
+
+        if extension is None:
+            extension = '.dat'
+
+        def newFileDirectoryCallback(input, value, passthru2):
+            print('newFileDirectoryCallback(input={}, value={}, passthru2={})'.format(input, value, passthru2))
+            if callable(callback):
+                value = value + passthru2
+
+                callback(self, value, passthru)
+
+        def newFileNameCallback(input, value, passthru3=None):
+            print('newFileNameCallback(input={}, value={}, passthru3={})'.format(input, value, passthru3))
+            value = value+extension
+
+            #let the user choose which directory to save this file to
+            self.get_directory(
+                data=data,
+                callback=newFileDirectoryCallback,
+                feedback_btn=None,
+                passthru=value,
+                message='Choose where to save {}'.format(value),
+                )
+
+        self.get_keyboard(
+            kb_popup_name=self._kb_popup_name,
+            callback=newFileNameCallback, # function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            password_mode=False,
+            text_feedback=None,  # button()
+            passthru=None,  # any object that you want to also come thru the callback
+            message='Enter a new name for the file.',
+            )
+
+    def get_directory(self,
+                data=None,
+                callback=None,
+                feedback_btn=None,
+                passthru=None,
+                message=None,
+                ):
+
+        if data is None:
+            data = File.ListDirWithSub()
+
+        newData = []
+        if data is not None:
+            for item in data:
+                if not item.endswith('/'):
+                    #change this '/folderA/file1.txt' to this '/folderA/'
+                    item = '/'.join(item.split('/')[:-1]) + '/'
+                    if item not in newData:
+                        newData.append(item)
+        data = newData
+
+        if message is None:
+            message = 'Select a folder'
+
+        self._dirNav.UpdateData(data)
+        self._dirNav.FileSelected = None #dont do anything when a file is selected. A file should never be selected anyway.
+        self._dirNav.UpdateMessage(message)
+
+        if self._btnSubmit:
+
+            @event(self._btnSubmit, 'Released')
+            def btnSubmitEvent(button, state):
+                if callable(callback):
+                    callback(self, self._dirNav.GetDir(), passthru)
+                self._btnSubmit.Host.HidePopup(self._file_explorer_popupName)
+
+            self._btnSubmit.SetText('Select this folder')
+            self._btnSubmit.SetVisible(True)
+
+            if self._file_explorer_popupName is not None:
+                Wait(0.1, lambda: self._TLP.ShowPopup(self._file_explorer_popupName))
+
+        else:
+            raise Exception('"get_directory" requires "setup_file_explorer()" with btnSubmit parameter')
+
 
     def setup_calendar(self,
                        calDayNumBtns,
@@ -4126,7 +4398,8 @@ class UniversalConnectionHandler:
 
             print('Trying to Re-connect to interface={}'.format(interface))
             if hasattr(interface, 'Connect'):
-                Wait(self._connection_retry_freqs[interface], interface.Connect)
+                if interface.Protocol == 'TCP':
+                    Wait(self._connection_retry_freqs[interface], interface.Connect)
 
         # Start/Stop the polling timer if it exists
         if interface in self._timers:
@@ -4194,5 +4467,372 @@ class UniversalConnectionHandler:
     def Disconnected(self, callback):
         self._disconnected_callback = callback
 
+class DirectoryNavigationClass:
+    def __init__(self,
+             lblCurrentDirectory=None,
+             btnScrollUp=None,
+             btnScrollDown=None,
+             lvlScrollFeedback=None,
+             lblScrollText=None,
+             btnNavUp=None,
+             limitStringLen=25,
+             lblMessage=None,
+            ):
+
+        self._lblMessage = lblMessage
+        self._limitStringLen = limitStringLen
+        self._btnNavUp = btnNavUp
+        self._lblCurrentDirectory = lblCurrentDirectory
+
+        self._table = ScrollingTable()
+        self._table.set_table_header_order(['entry', 'folderIcon'])
+        if btnScrollUp is not None:
+            self._table.register_scroll_up_button(btnScrollUp)
+            btnScrollUp._repeatTime = 0.1
+            btnScrollUp._holdTime = 0.2
+            @event(btnScrollUp, ['Pressed', 'Repeated'])
+            def btnScrollUpEvent(button, state):
+                print('btnScrollUpEvent', state)
+                self._table.scroll_up()
+
+        if btnScrollDown is not None:
+            self._table.register_scroll_down_button(btnScrollDown)
+            btnScrollDown._repeatTime = 0.1
+            btnScrollDown._holdTime = 0.2
+            @event(btnScrollDown, ['Pressed', 'Repeated'])
+            def btnScrollDownEvent(button, state):
+                self._table.scroll_down()
+
+        if btnNavUp is not None:
+            @event(btnNavUp, 'Released')
+            def btnNavUpEvent(button, state):
+                self.NavigateUp()
+
+        if lvlScrollFeedback is not None:
+            self._table.register_scroll_level(lvlScrollFeedback)
+
+        if lblScrollText is not None:
+            self._table.register_scroll_label(lblScrollText)
+
+        self._data = {
+            #[
+            #'/rootfile1',
+            #'/rootfile2',
+            #'/rootFolder3/file3a',
+            #'/rootFolder3/file3b',
+            #'/rootFolder3/folder3c/file3c1',
+            #'/rootFolder3/folder3c/file3c2',
+            #]
+        }
+        self._currentDirectory = '/'
+
+        self._waitUpdateTable = Wait(0.1, self._UpdateTable)
+        self._waitUpdateTable.Cancel()
+
+        self._table.CellPressed = self._CellPressed
+        self._fileSelectedCallback = None
+
+    def RegisterRow(self, rowNumber, btnIcon, btnSelection):
+        self._table.register_row_buttons(rowNumber, btnSelection, btnIcon)
+
+    def NavigateUp(self):
+        if self._currentDirectory != '/':
+            dropDir = self._currentDirectory.split('/')[-2] + '/'
+            self._currentDirectory = self._currentDirectory.replace(dropDir, '')
+            self._waitUpdateTable.Restart()
+
+    def UpdateData(self, newData):
+        self._data = newData
+        self._waitUpdateTable.Restart()
+
+    def _CurrentDirIsValid(self):
+        if not self._currentDirectory.endswith('/'):
+            return False
+
+        for item in self._data:
+            if self._currentDirectory in item:
+                return True
+
+        return False
+
+    def _UpdateTable(self):
+        try:
+            #Verify the self._currentDirectory is valid
+            if not self._CurrentDirIsValid():
+                self._currentDirectory = '/'
+
+            #Update the table with data
+            self._table.clear_all_data()
+            if self._data is not None:
+
+                subDirectories = []
+                for item in self._data:
+                    #Determine if the item is a folder or file
+                    if item.startswith(self._currentDirectory):
+                        itemMinusCurrent = item[len(self._currentDirectory):]
+                        print('itemMinusCurrent=', itemMinusCurrent)
+                        if len(itemMinusCurrent.split('/')) is 1:
+                            #this item is a file in the current directory
+                            name = itemMinusCurrent
+                            folderIcon = ' '
+                        else:
+                            #this item is a sub-directory
+                            name = itemMinusCurrent.split('/')[0]
+                            if name not in subDirectories:
+                                subDirectories.append(name)
+                                folderIcon = '\xb1'#arrow icon
+                            else:
+                                continue #only add the sub-directories once
+
+                        self._table.add_new_row_data({'entry': str(name), 'folderIcon': folderIcon,})
+
+                self._table.sort_by_column_list([1,0], reverse=True)
+                #self._table.sort_by_column(0)
+
+
+            #Update the current directory label
+            if self._lblCurrentDirectory is not None:
+                if self._data is not None:
+                    self._lblCurrentDirectory.SetText(self._currentDirectory, limitLen=self._limitStringLen, elipses=True, justify='Right')
+                else:
+                    self._lblCurrentDirectory.SetText('<No Data>')
+
+            #Update the NavUp button
+            if self._btnNavUp is not None:
+                if self._data is None or self._currentDirectory == '/':
+                    self._btnNavUp.SetVisible(False)
+                else:
+                    self._btnNavUp.SetVisible(True)
+
+
+        except Exception as e:
+            print('Exeption DirectoryNavigationClass._UpdateTable\n', e)
+            print('item=', item)
+
+    def IsFile(self, name):
+        for item in self._data:
+            if name in item:
+                if name == item.split('/')[-1]:
+                    return True
+
+        return False
+
+    def IsDirectory(self, name):
+        for item in self._data:
+            if name in item:
+                if name != item.split('/')[-1]:
+                    return True
+
+        return False
+
+    def ChangeDirectory(self, newDir):
+        if not newDir.endswith('/'):
+            newDir += '/'
+
+        self._currentDirectory = newDir
+
+    def _CellPressed(self, table, cell):
+        row = cell.get_row()
+        value = self._table.get_cell_value(row, 0)
+        print('value=', value)
+        if self.IsDirectory(value):
+            self.ChangeDirectory(self._currentDirectory + value + '/')
+            self._waitUpdateTable.Restart()
+
+        if self.IsFile(value):
+            if callable(self._fileSelectedCallback):
+                self._fileSelectedCallback(self, self._currentDirectory + value)
+
+    def GetDir(self):
+        return self._currentDirectory
+
+    @property
+    def FileSelected(self):
+        return self._fileSelectedCallback
+
+    @FileSelected.setter
+    def FileSelected(self, func):
+        #func should be a function that accetps this dir nav object itself and the selected value
+        self._fileSelectedCallback = func
+
+    def UpdateMessage(self, msg):
+        if self._lblMessage is not None:
+            self._lblMessage.SetText(msg)
+
+def SortListDictByKey(aList, sortKey, reverse=False):
+    '''
+    aList = list of dicts
+    sortKeys = list key from dict. the dicts will be sorted in this order
+    reverse =  Used to sort a-z(False) or z-a(True)
+    returns a new list with the items(dicts) sorted by key
+
+    Example
+    aList = [{'Value', '1'}, {'Value', '3'}, {'Value', '2'}...]
+    newList = SortListOfDictsByKey(aList, 'Value')
+    print(newList)
+    >>[{'Value', '1'}, {'Value', '2'}, {'Value', '3'}...]
+
+    newList = SortListOfDictsByKey(aList, 'Value', 'decending')
+    print(newList)
+    >>[{'Value', '3'}, {'Value', '2'}, {'Value', '1'}...]
+
+    '''
+
+    if not isinstance(reverse, bool):
+        raise Exception('Reverse parameter must be type bool')
+
+    return sorted(aList, key=lambda d: d[sortKey], reverse=reverse)
+
+
+def SortListOfDictsByKeys(aList, sortKeys=[], reverse=False):
+    '''
+    aList = list of dicts
+    sortKeys = list of keys to sort by
+    reverse = bool to sort a-z(True) or z-a(False)
+
+    Example:
+    #a list filled with dicts that are not in any particular order
+    theList = [
+        {'valueB': 1, 'valueC': 2, 'valueA': 1} ,
+        {'valueB': 0, 'valueC': 1, 'valueA': 0} ,
+        {'valueB': 2, 'valueC': 9, 'valueA': 0} ,
+        {'valueB': 2, 'valueC': 1, 'valueA': 2} ,
+        {'valueB': 1, 'valueC': 1, 'valueA': 2} ,
+        {'valueB': 1, 'valueC': 2, 'valueA': 0} ,
+        {'valueB': 0, 'valueC': 2, 'valueA': 2} ,
+        {'valueB': 0, 'valueC': 7, 'valueA': 1} ,
+        {'valueB': 2, 'valueC': 5, 'valueA': 1} ,
+        ]
+
+    newList = SortListOfDictsByKeys(theList, ['valueA', 'valueC'])
+    print(newList)
+    >>>
+    [
+        {'valueB': 0, 'valueC': 1, 'valueA': 0} ,
+        {'valueB': 1, 'valueC': 2, 'valueA': 0} ,
+        {'valueB': 2, 'valueC': 9, 'valueA': 0} ,
+        {'valueB': 1, 'valueC': 2, 'valueA': 1} ,
+        {'valueB': 2, 'valueC': 5, 'valueA': 1} ,
+        {'valueB': 0, 'valueC': 7, 'valueA': 1} ,
+        {'valueB': 2, 'valueC': 1, 'valueA': 2} ,
+        {'valueB': 1, 'valueC': 1, 'valueA': 2} ,
+        {'valueB': 0, 'valueC': 2, 'valueA': 2} ,
+    ]
+
+    Notice the dicts are organized by valueA, when valueA is the same, then they are sorted by valueC
+
+    '''
+
+    missingKeys = []
+    for d in aList:
+        for key in d:
+            if key not in sortKeys and key not in missingKeys:
+                missingKeys.append(key)
+
+    sortKeys.extend(missingKeys)
+
+    aList = aList.copy() #dont want to hurt the users data
+
+    newList = []
+
+    #break list into smaller list
+    subList = {
+        #'sortKey': [{...}], #all the dict that have the sortKey are in now accessible thru subList['sortKey']
+        }
+
+    for d in aList:
+        for sortKey in sortKeys:
+            if sortKey in d:
+                if sortKey not in subList:
+                    subList[sortKey] = []
+
+                subList[sortKey].append(d)
+
+    #now all the dicts have been split by sortKey, there are prob duplicates
+
+    #we must now sort the sub list
+    for sortKey, l in subList.copy().items():
+        l = SortListDictByKey(l, sortKey, reverse)
+        subList[sortKey] = l
+
+    #now all the sublist are sorted by their respective keys
+
+
+    def contains(d, subD):
+        #print('contains d={}, subD={}'.format(d, subD))
+        containsAllKeys = True
+        for key in subD:
+            if key not in d:
+                containsAllKeys = False
+                return False
+
+        if containsAllKeys:
+            for key in subD:
+                if d[key] != subD[key]:
+                    return False
+
+        return True
+
+    def getDictWith(l2, subD):
+        #l = list of dicts
+        #subD = dict
+        #returns a list of dicts from within l that contain subD
+        #print('getDictWith l={}, subD={}'.format(l2, subD))
+        result = []
+
+        for d in l2:
+            if contains(d, subD):
+                result.append(d)
+        return result
+
+    def getAllValuesOfKey(listOfDicts, key):
+        values = []
+        for d in listOfDicts:
+            if d[key] not in values:
+                values.append(d[key])
+
+        return values
+
+    for key in subList:
+        print('subList[{}] = {}'.format(key, subList[key]))
+
+
+    #assemble the subList into a single list with the final order
+    newList = []
+
+    for thisKey in sortKeys:
+        thisList = subList[thisKey]
+        thisIndex = sortKeys.index(thisKey)
+        try:
+            nextIndex = thisIndex + 1
+            nextKey = sortKeys[nextIndex]
+            nextList = subList[nextKey]
+
+            print('\n thisKey={}, thisList={}'.format(thisKey, thisList))
+            print('nextKey={}, nextList={}'.format(nextKey, nextList))
+
+
+            for thisValue in getAllValuesOfKey(thisList, thisKey):
+                for nextValue in getAllValuesOfKey(nextList, nextKey):
+                    dictsWithThisValueAndNextValue = getDictWith(aList, {thisKey:thisValue, nextKey:nextValue})
+                    for d in dictsWithThisValueAndNextValue:
+                        if d not in newList:
+                            newList.append(d)
+
+        except Exception as e:
+            #print('e=', e)
+            #probably on the last index
+            for d in thisList:
+                if d not in newList:
+                    newList.append(d)
+                    pass
+
+    return newList
+
+def _string_to_bytes(text):
+    return list(ord(c) for c in text)
+
+def _bytes_to_string(binary):
+    return "".join(chr(b) for b in binary)
 
 print('End  GST')

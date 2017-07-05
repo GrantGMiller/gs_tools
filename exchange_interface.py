@@ -162,8 +162,7 @@ class _Attachment:
 
 class Exchange():
     # Exchange methods
-    def __init__(self, server, username, password, service):
-        self.service = service
+    def __init__(self, server, username, password):
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
@@ -373,11 +372,12 @@ class Exchange():
                               <t:Body BodyType="HTML">{2}</t:Body>
                               <t:Start>{3}</t:Start>
                               <t:End>{4}</t:End>
+                              <t:MeetingTimeZone TimeZoneName="{5}" />
                             </t:CalendarItem>
                           </m:Items>
                         </m:CreateItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self._soapHeader, subject, body, startTimeString, endTimeString)
+                    </soap:Envelope>""".format(self._soapHeader, subject, body, startTimeString, endTimeString, time.tzname[0])
 
         self._SendHttp(xmlBody)
 

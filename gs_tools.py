@@ -27,7 +27,7 @@ import base64
 import re
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -314,11 +314,25 @@ class File(extronlib.system.File):
 
 # extronlib.interface **************************************************************
 class ContactInterface(extronlib.interface.ContactInterface):
-    pass
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Port', self.Port
+        yield 'Type', str(type(self))
 
 
 class DigitalIOInterface(extronlib.interface.DigitalIOInterface):
-    pass
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Port', self.Port
+        yield 'Mode', self.Mode
+        yield 'Pullup', self.Pullup
+        yield 'Type', str(type(self))
 
 
 class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
@@ -593,15 +607,85 @@ class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
 
 
 class FlexIOInterface(extronlib.interface.FlexIOInterface):
-    pass
-
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        yield 'Port', self.Port
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Mode', self.Mode
+        yield 'Pullup', self.Pullup
+        yield 'Upper', self.Upper
+        yield 'Lower', self.Lower
+        yield 'Type', str(type(self))
 
 class IRInterface(extronlib.interface.IRInterface):
     pass
 
 
 class RelayInterface(extronlib.interface.RelayInterface):
-    pass
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        yield 'Port', self.Port
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Type', str(type(self))
+
+    def __new__(cls, *args, **kwargs):
+        '''
+        https://docs.python.org/3/reference/datamodel.html#object.__new__
+
+        The return value of __new__() should be the new object instance (usually an instance of cls).
+        '''
+        print('RelayInterface.__new__(args={}, kwargs={})'.format(args, kwargs))
+
+        if len(args) > 0:
+            Host = args[0]
+        else:
+            Host = kwargs.get('Host')
+
+        if len(args) > 1:
+            Port = args[1]
+        else:
+            Port = kwargs.get('Port')
+
+        if not Host.port_in_use(Port):
+            relay_interface = ProcessorDevice._get_relay_instance(*args, **kwargs)
+            if relay_interface is not None:
+                print('An old relay instance has been found. use it')
+                return relay_interface
+
+            elif relay_interface is None:
+                print('This is the first time this relay interface has been instantiated. call super new')
+                return super().__new__(cls)
+        else:
+            raise Exception(
+                'This relay port is already in use.\nConsider using Host.make_port_available({})'.format(Port))
+
+
+    def __init__(self, *args, **kwargs):
+
+        Host = None
+        if len(args) > 0:
+            Host = args[0]
+        else:
+            Host = kwargs['Host']
+
+        Port = None
+        if len(args) > 1:
+            Port = args[1]
+        else:
+            Port = kwargs['Port']
+
+        if Port not in ProcessorDevice._relay_instances[Host.DeviceAlias].keys():
+            print('This is the first time this port has been init')
+            super().__init__(*args, **kwargs)
+        else:
+            print('This has been init before. do nothing')
+            pass
+
+        ProcessorDevice._register_new_relay_instance(self)
 
 
 class SerialInterface(extronlib.interface.SerialInterface):
@@ -689,7 +773,13 @@ class SerialInterface(extronlib.interface.SerialInterface):
 
 
 class SWPowerInterface(extronlib.interface.SWPowerInterface):
-    pass
+    def __iter__(self):
+        '''
+        This allows an interface to be cast as a dict
+        '''
+        yield 'Host.DeviceAlias', self.Host.DeviceAlias
+        yield 'Port', self.Port
+        yield 'Type', str(type(self))
 
 
 class VolumeInterface(extronlib.interface.VolumeInterface):
@@ -698,6 +788,18 @@ class VolumeInterface(extronlib.interface.VolumeInterface):
 
 # extronlib.device **************************************************************
 class ProcessorDevice(extronlib.device.ProcessorDevice):
+    _relay_ports_in_use = {# ProcessorDevice.DeviceAlias: ['RLY1', 'RLY2', ...]
+    }
+
+    _relay_instances = {  # ProcessorDevice.DeviceAliasA: {
+        # 'RLY1': RelayInterfaceObjectA1,
+        # 'RLY2': RelayInterfaceObjectA2,
+        # },
+        # ProcessorDevice.DeviceAliasB: {'RLY1': RelayInterfaceObjectB1,
+        # 'RLY2': RelayInterfaceObjectB2,
+        # },
+    }
+
     _serial_ports_in_use = {  # ProcessorDevice.DeviceAlias: ['COM1', 'COM2', ...]
     }
 
@@ -719,6 +821,15 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
         if instance.Port not in cls._serial_ports_in_use[instance.Host.DeviceAlias]:
             cls._serial_ports_in_use[instance.Host.DeviceAlias].append(instance.Port)
+
+    @classmethod
+    def _register_new_relay_instance(cls, instance):
+        print('ProcessorDevice._register_new_relay_instance(instance={})'.format(instance))
+
+        cls._relay_instances[instance.Host.DeviceAlias][instance.Port] = instance
+
+        if instance.Port not in cls._relay_ports_in_use[instance.Host.DeviceAlias]:
+            cls._relay_ports_in_use[instance.Host.DeviceAlias].append(instance.Port)
 
     @classmethod
     def _get_serial_instance(cls, Host, Port, **kwargs):
@@ -743,15 +854,46 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
                 'This port is not available.\n Consider calling ProcessorDevice._make_port_available(Host, Port)')
 
     @classmethod
+    def _get_relay_instance(cls, Host, Port, **kwargs):
+        print('ProcessorDevice._get_relay_instance(Host={}\n Port={}\n kwargs={}'.format(Host, Port, kwargs))
+        # return new/old serial instance
+        if Port not in cls._relay_ports_in_use[Host.DeviceAlias]:
+            print(
+                'The relay port is availble. Either becuase it has never been instantiated or cuz the programmer called "_make_port_available"')
+
+            if Port in cls._relay_instances[Host.DeviceAlias].keys():
+                print('A RelayInterface already exist. Return the old relay_interface')
+                relay_interface = cls._relay_instances[Host.DeviceAlias][Port]
+                print('relay_interface=', relay_interface)
+                return relay_interface
+            else:
+                print('This RelayInterface has NOT been instantiated before. return None')
+                return None
+        else:
+            print('This relay port is not available')
+            raise Exception(
+                'This relay port is not available.\n Consider calling ProcessorDevice._make_port_available(Host, Port)')
+
+    @classmethod
     def _make_port_available(cls, Host, Port):
         print('ProcessorDevice._make_port_available(Host={}\n Port={}'.format(Host, Port))
         # return None
-        if Port in cls._serial_ports_in_use[Host.DeviceAlias]:
-            print('The port {} has already been instantiated. but make it available again'.format(Port))
-            cls._serial_ports_in_use[Host.DeviceAlias].remove(Port)
-        else:
-            print('The port has never been instantiated. do nothing.')
-            pass
+
+        if 'COM' in Port:
+            if Port in cls._serial_ports_in_use[Host.DeviceAlias]:
+                print('The serial port {} has already been instantiated. but make it available again'.format(Port))
+                cls._serial_ports_in_use[Host.DeviceAlias].remove(Port)
+            else:
+                print('The serial port has never been instantiated. do nothing.')
+                pass
+
+        elif 'RLY' in Port:
+            if Port in cls._relay_ports_in_use[Host.DeviceAlias]:
+                print('The relay port {} has already been instantiated. but make it available again'.format(Port))
+                cls._relay_ports_in_use[Host.DeviceAlias].remove(Port)
+            else:
+                print('The relay port has never been instantiated. do nothing.')
+                pass
 
     def __new__(cls, *args, **kwargs):
         '''
@@ -766,6 +908,14 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
         if device_alias not in cls._serial_instances:
             cls._serial_instances[device_alias] = {}
+
+
+        if device_alias not in cls._relay_ports_in_use:
+            cls._relay_ports_in_use[device_alias] = []
+
+        if device_alias not in cls._relay_instances:
+            cls._relay_instances[device_alias] = {}
+
 
         if device_alias not in cls._processor_device_instances:
             # no processor with this device_alias has ever been instantiated. super().__new__
@@ -789,22 +939,28 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
             pass
 
         if self not in self._allProcessorDevices:
-            StartVTLPServer(self.IPAddress, 8080)
+            StartVTLPServer(self.IPAddress)
             self._allProcessorDevices.append(self)
 
     def port_in_use(self, port_str):
         print('ProcessorDevice.port_in_use\n self={}\n port_str={}\n\n self._serial_ports_in_use={}'.format(self,
                                                                                                             port_str,
                                                                                                             self._serial_ports_in_use))
+        if 'COM' in port_str:
+            if port_str in self._serial_ports_in_use[self.DeviceAlias]:
+                return True
+            else:
+                return False
 
-        if port_str in self._serial_ports_in_use[self.DeviceAlias]:
-            return True
-        else:
-            return False
+        elif 'RLY' in port_str:
+            if port_str in self._relay_ports_in_use[self.DeviceAlias]:
+                return True
+            else:
+                return False
 
     def make_port_available(self, port_str):
         print('ProcessorDevice.clear_port_in_use\n self={}\n port_str={}'.format(self, port_str))
-        self._make_port_available(self.Host, self.Port)
+        self._make_port_available(self, port_str)
 
     def __str__(self):
         try:
@@ -866,7 +1022,7 @@ class UIDevice(extronlib.device.UIDevice):
         self.PopupData[popup] = 'Showing'
 
     def HidePopup(self, popup):
-        print('HidePopup popup=', popup)
+        #print('HidePopup popup=', popup)
         super().HidePopup(popup)
 
         if popup in self.PopupWaits:
@@ -2539,12 +2695,15 @@ class UserInputClass:
     Get a calendar data as a datetime.datetime object: UserInput.get_date(**kwargs)
     etc...
     '''
+    _instances = [] #hold all instances so that instances can request each other to update
+
 
     def __init__(self, TLP):
         self._TLP = TLP
 
         self._kb_feedback_btn = None
         self._kb_text_feedback = None
+        self._instances.append(self)
 
     def setup_file_explorer(self,
             lblCurrentDirectory=None,
@@ -2819,7 +2978,7 @@ class UserInputClass:
 
         self._currentYear = 0
         self._currentMonth = 0
-        self._currentDatetime = None
+        self._currentDatetime = datetime.datetime.now()
         self._calEvents = [
             # {'datetime': dt,
             # 'name': 'name of event',
@@ -2963,7 +3122,9 @@ class UserInputClass:
         '''
         if dt is None:
             dt = self.GetCalCurrentDatetime()
-        self._calDisplayMonth(dt)
+
+        for instance in self._instances:
+            instance._calDisplayMonth(dt)
 
     def _calDisplayMonth(self, dt):
         # date = datetime.datetime object
@@ -3494,7 +3655,7 @@ def hash_it(string=''):
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
 
-
+timerDebug = False
 # Timer class (safer than recursive Wait objects per PD)
 class Timer:
     def __init__(self, t, func):
@@ -3504,17 +3665,17 @@ class Timer:
         :param t: float
         :param func: callable (no parameters)
         '''
-        print('Timer.__init__(t={}, func={})'.format(t, func))
+        if timerDebug: print('Timer.__init__(t={}, func={})'.format(t, func))
         self._func = func
         self._t = t
         self._run = False
 
     def Stop(self):
-        print('Timer.Stop()')
+        if timerDebug: print('Timer.Stop()')
         self._run = False
 
     def Start(self):
-        print('Timer.Start()')
+        if timerDebug: print('Timer.Start()')
         if self._run is False:
             self._run = True
 
@@ -3546,7 +3707,7 @@ class Timer:
         :param new_t: float
         :return:
         '''
-        print('Timer.ChangeTime({})'.format(new_t))
+        if timerDebug: print('Timer.ChangeTime({})'.format(new_t))
         was_running = self._run
 
         self.Stop()
@@ -3684,9 +3845,9 @@ def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
                 btn.SetText('Disconnected')
             else:
                 btn.SetState(WHITE)
-                btn.SetText('Error')
+                btn.SetText('Error 16')
 
-
+debugUCH = False
 class UniversalConnectionHandler:
     _defaultCH = None
 
@@ -3786,7 +3947,7 @@ class UniversalConnectionHandler:
         :param connection_retry_freq: int - how many seconds after a Disconnect event to try to do Connect
         :return:
         '''
-        print(
+        if debugUCH: print(
             'maintain()\ninterface={}\nkeep_alive_query_cmd="{}"\nkeep_alive_query_qual={}\npoll_freq={}\ndisconnect_limit={}\ntimeout={}\nconnection_retry_freq={}'.format(
                 interface, keep_alive_query_cmd, keep_alive_query_qual, poll_freq, disconnect_limit,
                 timeout, connection_retry_freq))
@@ -3821,7 +3982,7 @@ class UniversalConnectionHandler:
                 # The extronlib.interface.EthernetServerInterfacee with Protocol="UDP" actually works pretty good by itself. No need to do anything special :-)
                 while True:
                     result = interface.StartListen()
-                    print(result)
+                    if debugUCH: print(result)
                     if result == 'Listening':
                         break
                     else:
@@ -3872,9 +4033,9 @@ class UniversalConnectionHandler:
                 result = parent.StartListen()
             except Exception as e:
                 result = 'Failed to StartListen: {}'.format(e)
-                print('StartListen on port {} failed\n{}'.format(parent.IPPort, e))
+                if debugUCH: print('StartListen on port {} failed\n{}'.format(parent.IPPort, e))
 
-            print('StartListen result=', result)
+            if debugUCH: print('StartListen result=', result)
 
             self._server_listen_status[parent] = result
 
@@ -3904,7 +4065,7 @@ class UniversalConnectionHandler:
 
                 # Create a new polling engine timer
                 def do_poll():
-                    print('do_poll interface.Update("{}", {})'.format(self._keep_alive_query_cmds[interface],
+                    if debugUCH: print('do_poll interface.Update("{}", {})'.format(self._keep_alive_query_cmds[interface],
                                                                       self._keep_alive_query_quals[interface]))
                     interface.Update(self._keep_alive_query_cmds[interface], self._keep_alive_query_quals[interface])
 
@@ -3921,7 +4082,7 @@ class UniversalConnectionHandler:
 
                 # Create a new polling engine timer
                 def do_poll():
-                    print('do_poll interface.Send({})'.format(self._keep_alive_query_cmds[interface]))
+                    if debugUCH: print('do_poll interface.Send({})'.format(self._keep_alive_query_cmds[interface]))
                     interface.Send(self._keep_alive_query_cmds[interface])
 
                 new_timer = Timer(self._poll_freqs[interface], do_poll)
@@ -3952,7 +4113,7 @@ class UniversalConnectionHandler:
                 # The update_connection_status method will maintain the connection from here on out.
 
     def _add_logical_connection_handling_client(self, interface):
-        print('_add_logical_connection_handling_client')
+        if debugUCH: print('_add_logical_connection_handling_client')
 
         # Initialize the send counter to 0
         if interface not in self._send_counters:
@@ -3967,7 +4128,7 @@ class UniversalConnectionHandler:
             self._update_connection_status_serial_or_ethernetclient(interface, 'Connected', 'ControlScript')
 
     def _check_connection_handlers(self, interface):
-        print('UCH._check_connection_handlers')
+        if debugUCH: print('UCH._check_connection_handlers')
         # if the user made their own connection handler, make sure our connection handler is called first
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
@@ -3977,7 +4138,7 @@ class UniversalConnectionHandler:
             self._assign_new_connection_handlers(interface)
 
     def _assign_new_connection_handlers(self, interface):
-        print('UCH._assign_new_connection_handlers')
+        if debugUCH: print('UCH._assign_new_connection_handlers')
         if interface not in self._connected_handlers:
             self._connected_handlers[interface] = None
 
@@ -4011,16 +4172,16 @@ class UniversalConnectionHandler:
 
             # Create a new .Send method that will increment the counter each time
             def new_send(*args, **kwargs):
-                print('new_send args={}, kwargs={}'.format(args, kwargs))
+                if debugUCH: print('new_send args={}, kwargs={}'.format(args, kwargs))
                 self._check_rx_handler_serial_or_ethernetclient(interface)
                 self._check_connection_handlers(interface)
 
                 currentState = self.get_connection_status(interface)
-                print('currentState=', currentState)
+                if debugUCH: print('currentState=', currentState)
                 if currentState is 'Connected':
                     # We dont need to increment the send counter if we know we are disconnected
                     self._send_counters[interface] += 1
-                print('new_send send_counter=', self._send_counters[interface])
+                if debugUCH: print('new_send send_counter=', self._send_counters[interface])
 
                 # Check if we have exceeded the disconnect limit
                 if self._send_counters[interface] > self._disconnect_limits[interface]:
@@ -4034,12 +4195,12 @@ class UniversalConnectionHandler:
         if current_send_and_wait_method != self._send_and_wait_methods[interface]:
             # Create new .SendAndWait that will increment the counter each time
             def new_send_and_wait(*args, **kwargs):
-                print('new_send_and_wait args={}, kwargs={}'.format(args, kwargs))
+                if debugUCH: print('new_send_and_wait args={}, kwargs={}'.format(args, kwargs))
                 self._check_rx_handler_serial_or_ethernetclient(interface)
                 self._check_connection_handlers(interface)
 
                 self._send_counters[interface] += 1
-                print('new_send_and_wait send_counter=', self._send_counters[interface])
+                if debugUCH: print('new_send_and_wait send_counter=', self._send_counters[interface])
 
                 # Check if we have exceeded the disconnect limit
                 if self._send_counters[interface] > self._disconnect_limits[interface]:
@@ -4055,7 +4216,7 @@ class UniversalConnectionHandler:
         :param interface:
         :return:
         '''
-        print('_check_rx_handler')
+        if debugUCH: print('_check_rx_handler')
 
         if interface not in self._rx_handlers:
             self._rx_handlers[interface] = None
@@ -4064,7 +4225,7 @@ class UniversalConnectionHandler:
         if current_rx != self._rx_handlers[interface] or current_rx == None:
             # The Rx handler got overwritten somehow, make a new Rx and assign it to the interface and save it in self._rx_handlers
             def new_rx(*args, **kwargs):
-                print('new_rx args={}, kwargs={}'.format(args, kwargs))
+                if debugUCH: print('new_rx args={}, kwargs={}'.format(args, kwargs))
                 self._send_counters[interface] = 0
 
                 if isinstance(interface, extronlib.interface.EthernetClientInterface):
@@ -4089,7 +4250,7 @@ class UniversalConnectionHandler:
     def _get_module_connection_callback(self, interface):
         # generate a new function that includes the interface and the 'kind' of connection
         def module_connection_callback(command, value, qualifier):
-            print('module_connection_callback(command={}, value={}, qualifier={}'.format(command, value, qualifier))
+            if debugUCH: print('module_connection_callback(command={}, value={}, qualifier={}'.format(command, value, qualifier))
             self._update_connection_status_serial_or_ethernetclient(interface, value, 'Module')
 
         return module_connection_callback
@@ -4287,7 +4448,7 @@ class UniversalConnectionHandler:
             # we need to override the rx handler with a new handler that will also add the timestamp
             def new_rx(client, data):
                 time_now = time.monotonic()
-                print('new_rx\ntime_now={}\nclient={}'.format(time_now, client))
+                if debugUCH: print('new_rx\ntime_now={}\nclient={}'.format(time_now, client))
                 self._server_client_rx_timestamps[parent][client] = time_now
                 self._update_serverEx_timer(parent)
                 old_rx(client, data)
@@ -4313,7 +4474,7 @@ class UniversalConnectionHandler:
                 if (oldest_timestamp is None) or client_timestamp < oldest_timestamp:
                     oldest_timestamp = client_timestamp
 
-                print('client={}\nclient_timestamp={}\noldest_timestamp={}'.format(client, client_timestamp,
+                if debugUCH: print('client={}\nclient_timestamp={}\noldest_timestamp={}'.format(client, client_timestamp,
                                                                                    oldest_timestamp))
 
             # We now have the oldest timestamp, thus we know when we should check the client again
@@ -4376,7 +4537,7 @@ class UniversalConnectionHandler:
         :param kind: str() 'ControlScript' or 'Module' or any other value that may be applicable
         :return:
         '''
-        print('_update_connection_status\ninterface={}\nstate={}\nkind={}'.format(interface, state, kind))
+        if debugUCH: print('_update_connection_status\ninterface={}\nstate={}\nkind={}'.format(interface, state, kind))
         if interface not in self._connection_status:
             self._connection_status[interface] = 'Unknown'
 
@@ -4386,7 +4547,7 @@ class UniversalConnectionHandler:
         if state != self._connection_status[interface]:
             # The state has changed. Do something with that change
 
-            print('Connection status has changed for interface={} from "{}" to "{}"'.format(interface,
+            if debugUCH: print('Connection status has changed for interface={} from "{}" to "{}"'.format(interface,
                                                                                             self._connection_status[
                                                                                                 interface], state))
             if callable(self._connected_callback):
@@ -4411,7 +4572,7 @@ class UniversalConnectionHandler:
         if state == 'Disconnected':
             self._send_counters[interface] = 0
 
-            print('Trying to Re-connect to interface={}'.format(interface))
+            if debugUCH: print('Trying to Re-connect to interface={}'.format(interface))
             if hasattr(interface, 'Connect'):
                 if interface.Protocol == 'TCP':
                     Wait(self._connection_retry_freqs[interface], interface.Connect)
@@ -4440,6 +4601,9 @@ class UniversalConnectionHandler:
 
         for interface in self._interfaces:
             s += self._interface_to_str(interface)
+
+    def __repr__(self):
+        return str(self)
 
     def _interface_to_str(self, interface):
         write_str = '{}\n'.format(self)
@@ -4850,7 +5014,7 @@ def _string_to_bytes(text):
 def _bytes_to_string(binary):
     return "".join(chr(b) for b in binary)
 
-def StartVTLPServer(hostIPAddress, hostIPPort):
+def StartVTLPServer(hostIPAddress, hostIPPort=8080):
     print('StartVTLPServer')
     tlpServer = EthernetServerInterfaceEx(hostIPPort)
 
@@ -4908,5 +5072,29 @@ HTTP/1.1 200 OK
         client.Disconnect()
 
     tlpServer.StartListen()
+
+#Processor port map ************************************************************
+
+PROCESSOR_CAPABILITIES = {
+    #'Part Number': {'Serial Ports': 8, 'IR/S Ports': 8, 'Digital Inputs...
+}
+PROCESSOR_CAPABILITIES['60-1418-01'] = { # IPCP Pro 550
+    'Serial Ports': 8,
+    'IR/S Ports': 8,
+    'Digital I/Os': 0,
+    'FLEX I/Os': 4,
+    'Relays': 8,
+    'Power Ports': 4,
+    'eBus': True,
+    }
+PROCESSOR_CAPABILITIES['60-1413-01'] = { # IPL Pro S3
+    'Serial Ports': 3,
+    'IR/S Ports': 0,
+    'Digital I/Os': 0,
+    'FLEX I/Os': 0,
+    'Relays': 0,
+    'Power Ports': 0,
+    'eBus': False,
+    }
 
 print('End  GST')

@@ -969,6 +969,9 @@ AESModesOfOperation = dict(
 class AES_Cipher(AESModeOfOperationCTR):
     pass
 
+def GetKeyFromPhrase(phrase):
+    h = hashlib.sha256(phrase)
+    return h.digest()
 
 def GetRandomKey(byteLen=32):
     return bytearray(random.getrandbits(8) for i in range(byteLen))

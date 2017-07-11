@@ -27,7 +27,7 @@ import base64
 import re
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -121,28 +121,23 @@ class Button(extronlib.ui.Button):
         Example:
         Button(TLP, 8022).ShowPopup('Confirm - Shutdown')
         '''
-
+        @event(self, 'Released')
         def NewFunc(button, state):
             button.Host.ShowPopup(popup, duration)
 
-        self.Released = NewFunc
-
     def ShowPage(self, page):
+        @event(self, 'Released')
         def NewFunc(button, state):
             button.Host.ShowPage(page)
-
-        self.Released = NewFunc
 
     def HidePopup(self, popup):
         '''This method is used to simplify a button that just needs to hide a popup
         Example:
         Button(TLP, 8023).HidePopup('Confirm - Shutdown')
         '''
-
+        @event(self, 'Released')
         def NewFunc(button, state):
             button.Host.HidePopup(popup)
-
-        self.Released = NewFunc
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
         if not isinstance(text, str):
@@ -2165,7 +2160,7 @@ class Keyboard():
 
 
 # ScrollingTable ****************************************************************
-ScrollingTable_debug = False
+ScrollingTable_debug = True
 
 
 class ScrollingTable():
@@ -2241,15 +2236,20 @@ class ScrollingTable():
         self._data_rows = []  # list of dicts. each list element is a row of data. represents the full spreadsheet.
         self._current_row_offset = 0  # indicates the data row in the top left corner
         self._current_col_offset = 0  # indicates the data col in the top left corner
-        self._max_row = 0  # height of ui table. 0 = no ui table, 1 = single row ui table, etc...
-        self._max_col = 0  # width of ui table. 0 = no ui table, 1 = single column ui table, etc
+        self._max_height = 0  # height of ui table. 0 = no ui table, 1 = single row ui table, etc...
+        self._max_width = 0  # width of ui table. 0 = no ui table, 1 = single column ui table, etc
         self._table_header_order = []
 
         self._cell_pressed_callback = None
-        self._scroll_level = None
+        self._scroll_updown_level = None
         self._scroll_up_button = None
         self._scroll_down_button = None
-        self._scroll_label = None
+        self._scroll_updown_label = None
+
+        self._scroll_leftright_level = None
+        self._scroll_left_button = None
+        self._scroll_right_button = None
+        self._scroll_leftright_label = None
 
         self._cellMutex = False
 
@@ -2266,6 +2266,7 @@ class ScrollingTable():
                                   UpdateTable)  # This controls how often the table UI gets updated. 0.2 seconds means the TLP has a  max refresh of 5 times per second.
         self._refresh_Wait.Cancel()
 
+    #Setup the table ***********************************************************
     @property
     def CellPressed(self):  # getter
         return self._cell_pressed_callback
@@ -2341,6 +2342,7 @@ class ScrollingTable():
             if key not in self._table_header_order:
                 self._table_header_order.append(key)
 
+        self.IsScrollable()
         self._refresh_Wait.Restart()
 
     def clear_all_data(self):
@@ -2352,6 +2354,7 @@ class ScrollingTable():
             for cell in self._cells:
                 cell.SetState(0)
 
+        self.IsScrollable()
         self._update_table()
 
     def update_row_data(self, where_dict, replace_dict):
@@ -2384,7 +2387,10 @@ class ScrollingTable():
                 for key in replace_dict:
                     row[key] = replace_dict[key]
 
+        self.IsScrollable()
         self._refresh_Wait.Restart()
+
+    #Manipulating the table data************************************************
 
     def has_row(self, where_dict):
         if ScrollingTable_debug and debug: print('ScrollingTable.has_row(where_dict={})'.format(where_dict))
@@ -2436,6 +2442,7 @@ class ScrollingTable():
                     if ScrollingTable_debug and debug: print('ScrollingTable.delete_row\nremoving row={}'.format(row))
                     self._data_rows.remove(row)
 
+        self.IsScrollable()
         self._update_table()
 
     def register_cell(self, *args, **kwargs):
@@ -2446,13 +2453,18 @@ class ScrollingTable():
 
         self._refresh_Wait.Restart()
 
-    def _find_max_row_col(self):
-        for cell in self._cells:
-            if cell._col > self._max_col:
-                self._max_col = cell._col + 1  # self._max_col is width of ui table(not 0 base)
+    # Displaying the table data ************************************************
 
-            if cell._row > self._max_row:
-                self._max_row = cell._row + 1  # self._max_row is height of ui table(not 0 base)
+    def _find_max_row_col(self):
+        '''
+        Determine the height and width of the viewable table
+        '''
+        for cell in self._cells:
+            if cell._col > self._max_width:
+                self._max_width = cell._col + 1  # self._max_width is width of ui table(not 0 base); 0 means no width
+
+            if cell._row > self._max_height:
+                self._max_height = cell._row + 1  # self._max_height is height of ui table(not 0 base); 0 means no height
 
     def scroll_up(self):
         if ScrollingTable_debug and debug: print('ScrollingTable.scroll_up(self={})'.format(self))
@@ -2466,10 +2478,10 @@ class ScrollingTable():
     def scroll_down(self):
         if ScrollingTable_debug and debug: print('ScrollingTable.scroll_down(self={})'.format(self))
         if ScrollingTable_debug and debug: print('self._current_row_offset=', self._current_row_offset)
-        if ScrollingTable_debug and debug: print('self._max_row=', self._max_row)
+        if ScrollingTable_debug and debug: print('self._max_height=', self._max_height)
         if ScrollingTable_debug and debug: print('len(self._data_rows)=', len(self._data_rows))
 
-        max_offset = len(self._data_rows) - self._max_row
+        max_offset = len(self._data_rows) - self._max_height  #want to show a blank row when we reach the bottom. This is a visual indicator to the user that there is no more data
         if max_offset < 0:
             max_offset = 0
         if ScrollingTable_debug and debug: print('max_offset=', max_offset)
@@ -2491,7 +2503,7 @@ class ScrollingTable():
     def scroll_right(self):
         if ScrollingTable_debug and debug: print('ScrollingTable.scroll_right(self={})'.format(self))
 
-        max_offset = len(self._table_header_order) - self._max_col
+        max_offset = len(self._table_header_order) - self._max_width  # want to show a blank col when we reach the right end. This is a visual indicator to the user that there is no more data
         if max_offset < 0:
             max_offset = 0
 
@@ -2506,57 +2518,64 @@ class ScrollingTable():
 
         # iterate over all the cell objects
         for cell in self._cells:
-            row_index = cell._row + self._current_row_offset
+            data_row_index = cell._row + self._current_row_offset
             if ScrollingTable_debug and debug:
-                print('cell=', cell)
-                print('cell._row=', cell._row)
-                print('self._current_row_offset=', self._current_row_offset)
-                print('row_index=', row_index)
-                print('self._data_rows=', self._data_rows)
-                print('len(self._data_rows)=', len(self._data_rows))
+                #print('cell._row={}, data_row_index={}'.format(cell._row, data_row_index))
                 pass
 
             # Is there data for this cell to display?
-            if row_index <= len(self._data_rows) - 1:
+            if data_row_index < len(self._data_rows):
                 # Yes there is data for this cell to display
 
-                row_dict = self._data_rows[row_index]
+                row_dict = self._data_rows[data_row_index]
                 # row_dict holds the data for this row
-                if ScrollingTable_debug and debug: print('row_dict=', row_dict)
+                if ScrollingTable_debug and debug: print('cell._row={}\ndata_row_index={}\nrow_dict={}'.format(cell._row, data_row_index, row_dict))
 
                 col_header_index = cell._col + self._current_col_offset
-                if col_header_index >= len(self._table_header_order):
-                    # There is a cell button that does not header associated.
-                    cell.SetText('')
-                    continue
                 # col_header_index is int() base 0 (left most col is 0)
                 # if ScrollingTable_debug and debug: print('col_header_index=', col_header_index)
 
                 # if ScrollingTable_debug and debug: print('self._table_header_order=', self._table_header_order)
-                col_header = self._table_header_order[col_header_index]
+                if col_header_index < len(self._table_header_order):
+                    col_header_text = self._table_header_order[col_header_index]
+                else:
+                    col_header_text = ''
                 # if ScrollingTable_debug and debug: print('col_header=', col_header)
 
                 # if ScrollingTable_debug and debug: print('row_dict=', row_dict)
 
-                if col_header in row_dict:
-                    cell_data = row_dict[col_header]  # cell_data holds data for this cell
+                if col_header_text in row_dict:
+                    cell_text = row_dict[col_header_text]  # cell_text holds data for this cell
                 else:
                     # There is no data for this column header
-                    cell_data = ''
+                    cell_text = ''
 
-                # if ScrollingTable_debug and debug: print('cell_data=', cell_data)
+                # if ScrollingTable_debug and debug: print('cell_text=', cell_text)
 
-                cell.SetText(str(cell_data))
+                cell.SetText(str(cell_text))
             else:
                 # no data for this cell
                 cell.SetText('')
 
-        # update scroll_level
-        if self._scroll_level:
-            max_row_offset = len(self._data_rows) - self._max_row
+        # update scroll up/down controls
+        if self._scroll_updown_level:
+            max_row_offset = len(self._data_rows) - self._max_height
             percent = toPercent(self._current_row_offset, 0, max_row_offset)
-            self._scroll_level.SetLevel(percent)
-            self.IsScrollable()  # show/hide the scroll bar
+            self._scroll_updown_level.SetLevel(percent)
+
+        # update scroll left/right controls
+        if self._scroll_leftright_level:
+            max_col_offset = len(self._table_header_order) - self._max_width
+            percent = toPercent(self._current_col_offset, 0, max_col_offset)
+            self._scroll_leftright_level.SetLevel(percent)
+
+        #update col headers
+        for headerButton in self._header_btns:
+            headerButtonIndex = self._header_btns.index(headerButton)
+            headerTextIndex = self._current_col_offset + headerButtonIndex
+            if headerTextIndex < len(self._table_header_order):
+                text = self._table_header_order[headerTextIndex]
+                headerButton.SetText(text)
 
     def get_column_buttons(self, col_number):
         # returns all buttons in the column.
@@ -2591,8 +2610,12 @@ class ScrollingTable():
         dataIndex = rowIndex + self._current_row_offset
         return self._data_rows[dataIndex]
 
-    def get_row_data(self, where_dict):
+    def get_row_data(self, where_dict=None):
         # returns a list of dicts that match whereDict
+        # if where_dict == None, will return all data
+        if where_dict == None:
+            where_dict = {}
+
         result = []
 
         for row in self._data_rows:
@@ -2636,9 +2659,9 @@ class ScrollingTable():
         self._data_rows = SortListDictByKey(self._data_rows, key, reverse)
         self._refresh_Wait.Restart()
 
-    def register_scroll_level(self, level):
+    def register_scroll_updown_level(self, level):
         # level = extronlib.ui.Level
-        self._scroll_level = level
+        self._scroll_updown_level = level
 
     def register_scroll_up_button(self, button):
         self._scroll_up_button = button
@@ -2646,8 +2669,21 @@ class ScrollingTable():
     def register_scroll_down_button(self, button):
         self._scroll_down_button = button
 
-    def register_scroll_label(self, label):
-        self._scroll_label = label
+    def register_scroll_updown_label(self, label):
+        self._scroll_updown_label = label
+
+    def register_scroll_leftright_level(self, level):
+        # level = extronlib.ui.Level
+        self._scroll_leftright_level = level
+
+    def register_scroll_left_button(self, button):
+        self._scroll_left_button = button
+
+    def register_scroll_right_button(self, button):
+        self._scroll_right_button = button
+
+    def register_scroll_leftright_label(self, label):
+        self._scroll_leftright_label = label
 
     def IsScrollable(self):
         '''
@@ -2655,9 +2691,12 @@ class ScrollingTable():
 
         basically if there are 10 rows on your TLP, but you only have 5 rows of data, then you dont need to show scroll buttons, return False
         '''
-        if len(self._data_rows) > self._max_row:
-            if self._scroll_level is not None:
-                self._scroll_level.SetVisible(True)
+        scrollable = False
+
+        #up/down scroll controls
+        if len(self._data_rows) > self._max_height:
+            if self._scroll_updown_level is not None:
+                self._scroll_updown_level.SetVisible(True)
 
             if self._scroll_up_button is not None:
                 self._scroll_up_button.SetVisible(True)
@@ -2665,14 +2704,14 @@ class ScrollingTable():
             if self._scroll_down_button is not None:
                 self._scroll_down_button.SetVisible(True)
 
-            if self._scroll_label is not None:
-                self._scroll_label.SetVisible(True)
+            if self._scroll_updown_label is not None:
+                self._scroll_updown_label.SetVisible(True)
 
-            return True
+            scrollable = True
 
         else:
-            if self._scroll_level is not None:
-                self._scroll_level.SetVisible(False)
+            if self._scroll_updown_level is not None:
+                self._scroll_updown_level.SetVisible(False)
 
             if self._scroll_up_button is not None:
                 self._scroll_up_button.SetVisible(False)
@@ -2680,10 +2719,40 @@ class ScrollingTable():
             if self._scroll_down_button is not None:
                 self._scroll_down_button.SetVisible(False)
 
-            if self._scroll_label is not None:
-                self._scroll_label.SetVisible(False)
+            if self._scroll_updown_label is not None:
+                self._scroll_updown_label.SetVisible(False)
 
-            return False
+        #left/right scroll controls
+        if len(self._table_header_order) > self._max_width:
+            if self._scroll_updown_level is not None:
+                self._scroll_updown_level.SetVisible(True)
+
+            if self._scroll_left_button is not None:
+                self._scroll_left_button.SetVisible(True)
+
+            if self._scroll_right_button is not None:
+                self._scroll_right_button.SetVisible(True)
+
+            if self._scroll_leftright_label is not None:
+                self._scroll_leftright_label.SetVisible(True)
+
+
+            scrollable = True
+
+        else:
+            if self._scroll_updown_level is not None:
+                self._scroll_updown_level.SetVisible(False)
+
+            if self._scroll_left_button is not None:
+                self._scroll_left_button.SetVisible(False)
+
+            if self._scroll_right_button is not None:
+                self._scroll_right_button.SetVisible(False)
+
+            if self._scroll_leftright_label is not None:
+                self._scroll_leftright_label.SetVisible(False)
+
+        return scrollable
 
 
 # UserInput *********************************************************************
@@ -3390,14 +3459,16 @@ class UserInputClass:
                     print('button.Text == ''\nPlease select a button with text')
                     return
 
+                #Set text feedback
+                if self._list_feedback_btn:
+                    self._list_feedback_btn.SetText(button.Text)
+
+                #do callback
                 if self._list_callback:
                     if self._list_passthru is not None:
                         self._list_callback(self, button.Text, self._list_passthru)
                     else:
                         self._list_callback(self, button.Text)
-
-                if self._list_feedback_btn:
-                    self._list_feedback_btn.SetText(button.Text)
 
                 self._TLP.HidePopup(self._list_popup_name)
 
@@ -3680,7 +3751,7 @@ class Timer:
             self._run = True
 
             try:
-                @Wait(0.0001)  # Start immediately
+                @Wait(0)  # Start immediately
                 def loop():
                     try:
                         # print('entering loop()')
@@ -3708,13 +3779,8 @@ class Timer:
         :return:
         '''
         if timerDebug: print('Timer.ChangeTime({})'.format(new_t))
-        was_running = self._run
 
-        self.Stop()
         self._t = new_t
-
-        if was_running:
-            self.Start()
 
     def Restart(self):
         # To easily replace a Wait object
@@ -3792,10 +3858,6 @@ def HandleConnection(*args, **kwargs):
         newCH = UniversalConnectionHandler()
         UniversalConnectionHandler._defaultCH = newCH
 
-        @event(newCH, ['Connected', 'Disconnected'])
-        def newCHEvent(intf, state):
-            print('newCHEvent(interface={}, state={})'.format(intf, state))
-
     UniversalConnectionHandler._defaultCH.maintain(*args, **kwargs)
 
 
@@ -3848,6 +3910,7 @@ def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
                 btn.SetText('Error 16')
 
 debugUCH = False
+
 class UniversalConnectionHandler:
     _defaultCH = None
 
@@ -3971,7 +4034,7 @@ class UniversalConnectionHandler:
                 self._maintain_serverEx_TCP(interface)
             else:
                 raise Exception(
-                    'This ConnectionHandler class does not support EthernetServerInterfaceEx with Protocol="UDP".\nConsider using EthernetServerInterface with Protocol="UDP" (non-EX).')
+                    'This UniversalConnectionHandler class does not support EthernetServerInterfaceEx with Protocol="UDP".\nConsider using EthernetServerInterface with Protocol="UDP" (non-EX).')
 
         elif isinstance(interface, extronlib.interface.EthernetServerInterface):
 
@@ -3995,12 +4058,18 @@ class UniversalConnectionHandler:
                 interface.Offline = self._get_controlscript_connection_callback(interface)
 
     def _maintain_serverEx_TCP(self, parent):
+        if debugUCH:print('_maintain_serverEx_TCP parent.Connected=', parent.Connected)
+        if debugUCH:print('_maintain_serverEx_TCP parent.Disconnected=', parent.Disconnected)
+
         # save old handlers
         if parent not in self._user_connected_handlers:
             self._user_connected_handlers[parent] = parent.Connected
 
         if parent not in self._user_disconnected_handlers:
             self._user_disconnected_handlers[parent] = parent.Disconnected
+
+        if debugUCH:print('_maintain_serverEx_TCP self._user_connected_handlers=', self._user_connected_handlers)
+        if debugUCH:print('_maintain_serverEx_TCP self._user_disconnected_handlers=', self._user_disconnected_handlers)
 
         # Create new handlers
         parent.Connected = self._get_serverEx_connection_callback(parent)
@@ -4384,6 +4453,9 @@ class UniversalConnectionHandler:
 
     def _get_serverEx_connection_callback(self, parent):
         def controlscript_connection_callback(client, state):
+            print('controlscript_connection_callback(client={}, state={})'.format(client, state))
+            print('self._user_connected_handlers=', self._user_connected_handlers)
+            print('self._user_disconnected_handlers=', self._user_disconnected_handlers)
 
             if state == 'Connected':
                 if parent in self._user_connected_handlers:
@@ -4451,7 +4523,8 @@ class UniversalConnectionHandler:
                 if debugUCH: print('new_rx\ntime_now={}\nclient={}'.format(time_now, client))
                 self._server_client_rx_timestamps[parent][client] = time_now
                 self._update_serverEx_timer(parent)
-                old_rx(client, data)
+                if callable(old_rx):
+                    old_rx(client, data)
 
             parent.ReceiveData = new_rx
             self._rx_handlers[parent] = new_rx
@@ -4688,10 +4761,10 @@ class DirectoryNavigationClass:
                 self.NavigateUp()
 
         if lvlScrollFeedback is not None:
-            self._table.register_scroll_level(lvlScrollFeedback)
+            self._table.register_scroll_updown_level(lvlScrollFeedback)
 
         if lblScrollText is not None:
-            self._table.register_scroll_label(lblScrollText)
+            self._table.register_scroll_updown_label(lblScrollText)
 
         self._data = {
             #[
@@ -5095,6 +5168,16 @@ PROCESSOR_CAPABILITIES['60-1413-01'] = { # IPL Pro S3
     'Relays': 0,
     'Power Ports': 0,
     'eBus': False,
+    }
+PROCESSOR_CAPABILITIES['60-1416-01'] = { # IPL Pro CR88
+    'Serial Ports': 0,
+    'IR/S Ports': 0,
+    'Digital I/Os': 0,
+    'FLEX I/Os': 0,
+    'Relays': 8,
+    'Power Ports': 0,
+    'eBus': False,
+    'Contact': 8,
     }
 
 print('End  GST')

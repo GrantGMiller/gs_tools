@@ -295,15 +295,17 @@ class File(extronlib.system.File):
 
     @classmethod
     def ListDirWithSub(cls, dir='/'):
+        #returns a list of str, each item is a file or subdir with the full path
         allFiles = []
         thisListDir = cls.ListDir(dir)
         print('dir={}, thisListDir={}'.format(dir, thisListDir))
         for item in thisListDir:
             if item.endswith('/'):
                 allFiles.extend(cls.ListDirWithSub(dir+item))
+                allFiles.append(dir+item)
             else:
                 allFiles.append(dir+item)
-
+        print('ListDirWithSub=', '\n'.join(allFiles))
         return allFiles
 
 
@@ -2266,6 +2268,8 @@ class ScrollingTable():
                                   UpdateTable)  # This controls how often the table UI gets updated. 0.2 seconds means the TLP has a  max refresh of 5 times per second.
         self._refresh_Wait.Cancel()
 
+        self._initialized = False
+
     #Setup the table ***********************************************************
     @property
     def CellPressed(self):  # getter
@@ -2343,6 +2347,7 @@ class ScrollingTable():
                 self._table_header_order.append(key)
 
         self.IsScrollable()
+        self._initialized = True #assuming that if the user is adding data to the table, then they are done setting up the table
         self._refresh_Wait.Restart()
 
     def clear_all_data(self):
@@ -2514,68 +2519,69 @@ class ScrollingTable():
         self._update_table()
 
     def _update_table(self):
-        if ScrollingTable_debug and debug: print('ScrollingTable._update_table()')
+        if self._initialized:
+            if ScrollingTable_debug and debug: print('ScrollingTable._update_table()')
 
-        # iterate over all the cell objects
-        for cell in self._cells:
-            data_row_index = cell._row + self._current_row_offset
-            if ScrollingTable_debug and debug:
-                #print('cell._row={}, data_row_index={}'.format(cell._row, data_row_index))
-                pass
+            # iterate over all the cell objects
+            for cell in self._cells:
+                data_row_index = cell._row + self._current_row_offset
+                if ScrollingTable_debug and debug:
+                    #print('cell._row={}, data_row_index={}'.format(cell._row, data_row_index))
+                    pass
 
-            # Is there data for this cell to display?
-            if data_row_index < len(self._data_rows):
-                # Yes there is data for this cell to display
+                # Is there data for this cell to display?
+                if data_row_index < len(self._data_rows):
+                    # Yes there is data for this cell to display
 
-                row_dict = self._data_rows[data_row_index]
-                # row_dict holds the data for this row
-                if ScrollingTable_debug and debug: print('cell._row={}\ndata_row_index={}\nrow_dict={}'.format(cell._row, data_row_index, row_dict))
+                    row_dict = self._data_rows[data_row_index]
+                    # row_dict holds the data for this row
+                    if ScrollingTable_debug and debug: print('cell._row={}\ndata_row_index={}\nrow_dict={}'.format(cell._row, data_row_index, row_dict))
 
-                col_header_index = cell._col + self._current_col_offset
-                # col_header_index is int() base 0 (left most col is 0)
-                # if ScrollingTable_debug and debug: print('col_header_index=', col_header_index)
+                    col_header_index = cell._col + self._current_col_offset
+                    # col_header_index is int() base 0 (left most col is 0)
+                    # if ScrollingTable_debug and debug: print('col_header_index=', col_header_index)
 
-                # if ScrollingTable_debug and debug: print('self._table_header_order=', self._table_header_order)
-                if col_header_index < len(self._table_header_order):
-                    col_header_text = self._table_header_order[col_header_index]
+                    # if ScrollingTable_debug and debug: print('self._table_header_order=', self._table_header_order)
+                    if col_header_index < len(self._table_header_order):
+                        col_header_text = self._table_header_order[col_header_index]
+                    else:
+                        col_header_text = ''
+                    # if ScrollingTable_debug and debug: print('col_header=', col_header)
+
+                    # if ScrollingTable_debug and debug: print('row_dict=', row_dict)
+
+                    if col_header_text in row_dict:
+                        cell_text = row_dict[col_header_text]  # cell_text holds data for this cell
+                    else:
+                        # There is no data for this column header
+                        cell_text = ''
+
+                    # if ScrollingTable_debug and debug: print('cell_text=', cell_text)
+
+                    cell.SetText(str(cell_text))
                 else:
-                    col_header_text = ''
-                # if ScrollingTable_debug and debug: print('col_header=', col_header)
+                    # no data for this cell
+                    cell.SetText('')
 
-                # if ScrollingTable_debug and debug: print('row_dict=', row_dict)
+            # update scroll up/down controls
+            if self._scroll_updown_level:
+                max_row_offset = len(self._data_rows) - self._max_height
+                percent = toPercent(self._current_row_offset, 0, max_row_offset)
+                self._scroll_updown_level.SetLevel(percent)
 
-                if col_header_text in row_dict:
-                    cell_text = row_dict[col_header_text]  # cell_text holds data for this cell
-                else:
-                    # There is no data for this column header
-                    cell_text = ''
+            # update scroll left/right controls
+            if self._scroll_leftright_level:
+                max_col_offset = len(self._table_header_order) - self._max_width
+                percent = toPercent(self._current_col_offset, 0, max_col_offset)
+                self._scroll_leftright_level.SetLevel(percent)
 
-                # if ScrollingTable_debug and debug: print('cell_text=', cell_text)
-
-                cell.SetText(str(cell_text))
-            else:
-                # no data for this cell
-                cell.SetText('')
-
-        # update scroll up/down controls
-        if self._scroll_updown_level:
-            max_row_offset = len(self._data_rows) - self._max_height
-            percent = toPercent(self._current_row_offset, 0, max_row_offset)
-            self._scroll_updown_level.SetLevel(percent)
-
-        # update scroll left/right controls
-        if self._scroll_leftright_level:
-            max_col_offset = len(self._table_header_order) - self._max_width
-            percent = toPercent(self._current_col_offset, 0, max_col_offset)
-            self._scroll_leftright_level.SetLevel(percent)
-
-        #update col headers
-        for headerButton in self._header_btns:
-            headerButtonIndex = self._header_btns.index(headerButton)
-            headerTextIndex = self._current_col_offset + headerButtonIndex
-            if headerTextIndex < len(self._table_header_order):
-                text = self._table_header_order[headerTextIndex]
-                headerButton.SetText(text)
+            #update col headers
+            for headerButton in self._header_btns:
+                headerButtonIndex = self._header_btns.index(headerButton)
+                headerTextIndex = self._current_col_offset + headerButtonIndex
+                if headerTextIndex < len(self._table_header_order):
+                    text = self._table_header_order[headerTextIndex]
+                    headerButton.SetText(text)
 
     def get_column_buttons(self, col_number):
         # returns all buttons in the column.
@@ -2687,12 +2693,8 @@ class ScrollingTable():
 
     def IsScrollable(self):
         '''
-        returns True if scroll buttons should be provided
-
-        basically if there are 10 rows on your TLP, but you only have 5 rows of data, then you dont need to show scroll buttons, return False
+        basically if there are 10 rows on your TLP, but you only have 5 rows of data, then you dont need to show scroll buttons, hide the controls assiciated with scrolling
         '''
-        scrollable = False
-
         #up/down scroll controls
         if len(self._data_rows) > self._max_height:
             if self._scroll_updown_level is not None:
@@ -2706,8 +2708,6 @@ class ScrollingTable():
 
             if self._scroll_updown_label is not None:
                 self._scroll_updown_label.SetVisible(True)
-
-            scrollable = True
 
         else:
             if self._scroll_updown_level is not None:
@@ -2724,8 +2724,8 @@ class ScrollingTable():
 
         #left/right scroll controls
         if len(self._table_header_order) > self._max_width:
-            if self._scroll_updown_level is not None:
-                self._scroll_updown_level.SetVisible(True)
+            if self._scroll_leftright_level is not None:
+                self._scroll_leftright_level.SetVisible(True)
 
             if self._scroll_left_button is not None:
                 self._scroll_left_button.SetVisible(True)
@@ -2736,12 +2736,9 @@ class ScrollingTable():
             if self._scroll_leftright_label is not None:
                 self._scroll_leftright_label.SetVisible(True)
 
-
-            scrollable = True
-
         else:
-            if self._scroll_updown_level is not None:
-                self._scroll_updown_level.SetVisible(False)
+            if self._scroll_leftright_level is not None:
+                self._scroll_leftright_level.SetVisible(False)
 
             if self._scroll_left_button is not None:
                 self._scroll_left_button.SetVisible(False)
@@ -2751,8 +2748,6 @@ class ScrollingTable():
 
             if self._scroll_leftright_label is not None:
                 self._scroll_leftright_label.SetVisible(False)
-
-        return scrollable
 
 
 # UserInput *********************************************************************
@@ -2833,7 +2828,7 @@ class UserInputClass:
         '''
         Example:
         for rowNumber in range(0, 7+1):
-            dir_register_row.RegisterRow(
+            file_explorer_register_rowObject.RegisterRow(
                 rowNumber=rowNumber,
                 btnIcon=Button(ui, 2000+rowNumber),
                 btnSelection=Button(ui, 1000+rowNumber, PressFeedback='State'),
@@ -2847,6 +2842,8 @@ class UserInputClass:
                 feedback_btn=None,
                 passthru=None,
                 message=None,
+                submitText='Submit',
+                submitCallback=None,
                 ):
 
         if data is None:
@@ -2861,7 +2858,20 @@ class UserInputClass:
             self._file_explorer_lblMessage.SetText(message)
 
         if self._btnSubmit:
-            self._btnSubmit.SetVisible(False)
+            if submitCallback is None:
+                self._btnSubmit.SetVisible(False)
+            else:
+                self._btnSubmit.SetText(submitText)
+                self._btnSubmit.SetVisible(True)
+                @event(self._btnSubmit, 'Released')
+                def self_btnSubmitEvent(button, state):
+                    submitCallback(button, state)
+
+        def SubCallback(*args, **kwargs):
+            self._TLP.HidePopup(self._file_explorer_popupName)
+            callback(*args, **kwargs)
+
+        self._dirNav.FileSelected = SubCallback
 
         if self._file_explorer_popupName is not None:
             Wait(0.1, lambda: self._TLP.ShowPopup(self._file_explorer_popupName))
@@ -2913,11 +2923,15 @@ class UserInputClass:
                 feedback_btn=None,
                 passthru=None,
                 extension=None, #'.json', '.dat', etc...
+                keyboardPopupName=None,
                 ):
         '''Use this method to create a new filePath and let the user choose the name and which directory to save it in
         returns: path to the new file. THe user will have to use File(path, mode='wt') to actually write data to the file
         return type: str (example: '/folder1/subfolder2/filename.txt')
         '''
+        if keyboardPopupName is None:
+            keyboardPopupName = self._kb_popup_name
+
         if data is None:
             data = File.ListDirWithSub()
 
@@ -2945,7 +2959,7 @@ class UserInputClass:
                 )
 
         self.get_keyboard(
-            kb_popup_name=self._kb_popup_name,
+            kb_popup_name=keyboardPopupName,
             callback=newFileNameCallback, # function - should take 2 params, the UserInput instance and the value the user submitted
             feedback_btn=None,
             password_mode=False,
@@ -2971,8 +2985,10 @@ class UserInputClass:
                 if not item.endswith('/'):
                     #change this '/folderA/file1.txt' to this '/folderA/'
                     item = '/'.join(item.split('/')[:-1]) + '/'
-                    if item not in newData:
-                        newData.append(item)
+
+                if item not in newData:
+                    newData.append(item)
+
         data = newData
 
         if message is None:

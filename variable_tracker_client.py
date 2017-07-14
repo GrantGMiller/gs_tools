@@ -2,6 +2,7 @@ from extronlib.interface import EthernetClientInterface, SerialInterface
 from extronlib.system import Wait
 
 import re
+import json
 
 debug = False
 if not debug:
@@ -10,13 +11,13 @@ if not debug:
 
 class DeviceClass():
     def __init__(self):
-        self._status = [
-            # (command, value, qualifier),
-        ]
+        self._status = {
+            # qualifier: value,
+        }
 
-        self._userCallbacks = [
-            # (command, qualifier, callback),
-        ]
+        self._userCallbacks = {
+            # qualifier: value,
+        }
 
         self._regexMap = [
             # (regex, callback),
@@ -25,6 +26,7 @@ class DeviceClass():
         self._buffer = ''
 
         self._AddRegex('Password:', self._MatchPassword)
+        self._AddRegex('(\{.*?\})\r', self._MatchJson)
 
         self.password = 'extron'
 
@@ -42,31 +44,31 @@ class DeviceClass():
 
     def _WriteStatus(self, command, value, qualifier=None):
         print('EthernetClass._WriteStatus(command={}, value={}, qualifier={})'.format(command, value, qualifier))
-        pass
-        # commandFound = False
-        # qualifierFound = False
-        #
-        ##See if the
-        # for tup in self._status:
-        # if command == tup[0]:
-        # commandFound = True
-        # if qualifier == tup[2]:
-        # qualifierFound = True
-        #
-        # if commandFound and qualifierFound:
-        # break
+
+        oldValue = self.ReadStatus(command, qualifier)
+
+        if oldValue != value:
+            if qualifier in self._userCallbacks:
+                callback = self._userCallbacks[qualifier]
+                if callable(callback):
+                    callback(command, value, qualifier)
+
+        self._status[qualifier] = value
 
     def Set(self, command, value, qualifier=None):
-        pass
+        data = {'command': command, 'value': value, 'qualifier': qualifier}
+        jsonData = json.dumps(data)
+        self.Send(jsonData + '\r')
 
     def ReadStatus(self, command, qualifier=None):
-        pass
+        return self._status.get(qualifier, None)
 
     def Update(self, command, qualifier=None):
-        pass
+        data = {'command': command, 'qualifier': qualifier}
+        self.Send(json.dumps(data) + '\r')
 
     def SubscribeStatus(self, command, qualifier, callback):
-        pass
+        self._userCallbacks[qualifier] = callback
 
     def _ReceiveData(self, _, data):
         print('EthernetClass._ReceiveData(data={})'.format(data))
@@ -85,6 +87,13 @@ class DeviceClass():
 
     def _MatchPassword(self, match):
         self.Send(self.password)
+
+    def _MatchJson(self, match):
+        data = json.loads(match.group(1))
+        qualifier = data['qualifier']
+        value = data['value']
+
+        self._WriteStatus(_, value, qualifier)
 
     def Send(self, data):
         print('EthernetClass.Send(data={})'.format(data))

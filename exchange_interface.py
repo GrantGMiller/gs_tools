@@ -79,7 +79,7 @@ class _CalendarItem:
             return self._data.get(key, None)
 
     def __contains__(self, dt):
-        # Note isinstance(datetime.datetime, datetime.date) == True
+        # Note: isinstance(datetime.datetime, datetime.date) == True
         # Because the point in time exist in that date
         if isinstance(dt, datetime.datetime):
             if dt >= self._startDT and dt <= self._endDT:
@@ -162,11 +162,17 @@ class _Attachment:
 
 class Exchange():
     # Exchange methods
-    def __init__(self, server, username, password):
+    def __init__(self,
+                 username,
+                 password,
+                 server='outlook.office365.com',
+                 impersonation=None,
+                 ):
+
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
-        self._impersonation = None
+        self._impersonation = impersonation
         self.header = {'content-type': 'text/xml; charset=utf-8',
                        'Authorization': 'Basic {}'.format(self.login)
                        }
@@ -183,17 +189,22 @@ class Exchange():
     # ----------------------------------------------------------------------------------------------------------------------
     # --------------------------------------------------EWS Services--------------------------------------------------------
     # ----------------------------------------------------------------------------------------------------------------------
-    def _GetSoapHeader(self, account):
+    def _GetSoapHeader(self, emailAddress):
         # This should only need to be called once to create the header that will be used in the XML request from now on
-        if account is None:
+        if emailAddress is None:
             xmlAccount = """<t:RequestServerVersion Version="Exchange2007_SP1" />"""
         else:
+            #replace = '<t:PrincipalName>{0}</t:PrincipalName>'.format(emailAddress)
+            #replace = '<t:SID>{0}</t:SID>'.format(emailAddress)
+            #replace = '<t:PrimarySmtpAddress>{0}</t:PrimarySmtpAddress>'.format(emailAddress)
+            replace = '<t:SmtpAddress>{0}</t:SmtpAddress>'.format(emailAddress)
+
             xmlAccount = """<t:RequestServerVersion Version="Exchange2007_SP1" />
                             <t:ExchangeImpersonation>
                                 <t:ConnectingSID>
-                                    <t:SmtpAddress>{0}</t:SmtpAddress>
+                                   {0}
                                 </t:ConnectingSID>
-                            </t:ExchangeImpersonation>""".format(account)
+                            </t:ExchangeImpersonation>""".format(replace)
         return xmlAccount
 
     def _UpdateFolderIdAndChangeKey(self):
@@ -245,8 +256,29 @@ class Exchange():
                 self._folderID = matchFolderInfo.group(1)
                 self._changeKey = matchFolderInfo.group(2)
 
-    def UpdateCalendar(self):
+            print('self._folderID=', self._folderID)
+
+    def UpdateCalendar(self, calendar=None):
         # gets the latest data for this week from exchange and stores it
+        # if calendar is not None, this will check another users calendar
+        # if calendar is None, it will check your own calendar
+
+        if calendar is None:
+            parentFolder = '''
+                <m:ParentFolderIds>
+                    <t:FolderId Id="{}" ChangeKey="{}" />
+                </m:ParentFolderIds>
+                '''.format(self._folderID, self._changeKey)
+        else:
+            parentFolder = '''
+                <m:ParentFolderIds>
+                    <t:DistinguishedFolderId Id="calendar">
+                      <t:Mailbox>
+                        <t:EmailAddress>{}</t:EmailAddress>
+                      </t:Mailbox>
+                    </t:DistinguishedFolderId>
+                  </m:ParentFolderIds>
+                '''.format(calendar)
 
         xmlbody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -269,13 +301,12 @@ class Exchange():
                             </t:AdditionalProperties>
                           </m:ItemShape>
                           <m:CalendarView MaxEntriesReturned="100" StartDate="{1}" EndDate="{2}" />
-                          <m:ParentFolderIds>
-                            <t:FolderId Id="{3}" ChangeKey="{4}" />
-                          </m:ParentFolderIds>
+                          {3}
                         </m:FindItem>
                       </soap:Body>
-                    </soap:Envelope>""".format(self._soapHeader, self._startOfWeek, self._endOfWeek, self._folderID,
-                                               self._changeKey)
+                    </soap:Envelope>
+                    """.format(self._soapHeader, self._startOfWeek, self._endOfWeek, parentFolder )
+
         # print('xtmbody=', xmlbody)
         response = self._SendHttp(xmlbody)
         # print('response=', response)
@@ -532,15 +563,15 @@ class Exchange():
         request = urllib.request.Request(self.httpURL, body, self.header, method='POST')
 
         try:
-            out = urllib.request.urlopen(request)
-            if out:
-                return (out.read().decode())
+            response = urllib.request.urlopen(request)
+            if response:
+                return (response.read().decode())
         except Exception as e:
-            print(e)
+            print('_SendHttp Exception:\n', e)
+            for item in dir(e):
+                print('e.{}'.format(item), '=', getattr(e, item))
+            raise e
 
-            # ----------------------------------------------------------------------------------------------------------------------
-            # ------------------------------------------------Return Request--------------------------------------------------------
-            # ----------------------------------------------------------------------------------------------------------------------
 
     def GetAllEvents(self):
         return self._calendarItems.copy()

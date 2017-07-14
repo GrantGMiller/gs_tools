@@ -8,7 +8,7 @@ import time
 import json
 import datetime
 
-debug = True
+debug = False
 if not debug:
     print = lambda *args, **kwargs: None
 
@@ -96,13 +96,12 @@ class CiscoClassificationManager:
             print('Sending query for {}'.format(key))
             self._interface.Send(self._info[key]['query'])
 
-    def Save(self, filePath=None):
+    def Save(self, filePath=None, metaData=None):
+        print('CiscoClassificationManager.Save(filePath={}, metaData={})'.format(filePath, metaData))
 
         if filePath is None:
             nowDT = datetime.datetime.now()
             filePath = 'Autosave_codec_settings_{}.json'.format(nowDT.strftime('%Y_%m_%d_%I_%M_%S'))
-
-        print('CiscoClassificationManager.Save(filePath={})'.format(filePath))
 
         self._GetAllInfo()
 
@@ -121,10 +120,17 @@ class CiscoClassificationManager:
                 print('Error. Not all data was saved. filePath=', filePath)
                 break
 
-        self._WriteData(filePath)
+        self._WriteData(filePath, metaData)
 
-    def _WriteData(self, filePath):
-        data = {}
+    def _WriteData(self, filePath, metaData=None):
+        # metaData is dict or None
+        print('CiscoClassificationManager._WriteData(filePath={}, metaData={})'.format(filePath, metaData))
+
+        if metaData is not None:
+            data = metaData
+        else:
+            data = {}
+
         for key in self._info:
             data[key] = self._info[key]['last rx value']
 
@@ -134,10 +140,13 @@ class CiscoClassificationManager:
         print('Data saved. filePath={}, data={}'.format(filePath, data))
 
     def Sanitize(self):
-        self._interface.Send('xCommand SystemUnit FactoryReset Confirm: Yes\r')
+        print('CiscoClassificationManager.Sanitize')
+        # self._interface.Send('xCommand SystemUnit FactoryReset Confirm: Yes\r')
+        self.Reboot()
 
     def Reboot(self):
         # Note: this takes about 90+ seconds
+        print('CiscoClassificationManager.Reboot')
         self._interface.Send('xCommand Boot\r')
 
     def RestoreFromFile(self, filePath, saveCurrentSettingsFirst=False):
@@ -152,8 +161,9 @@ class CiscoClassificationManager:
             data = json.loads(file.read())
 
         for key in data:
-            command = self._info[key]['set'].format(data[key])
-            self._interface.Send(command)
+            if key in self._info:
+                command = self._info[key]['set'].format(data[key])
+                self._interface.Send(command)
 
         print('Settings restored from file. data={}'.format(data))
 
@@ -183,6 +193,19 @@ class CiscoClassificationManager:
         if self._interface_oldRx:
             self._interface_oldRx(interface, data)
 
-    def __del__(self):
-        print('CiscoClassificationManager.__del__')
+    def Del(self):
+        print('CiscoClassificationManager.Del')
         self._interface.ReceiveData = self._interface_oldRx
+        del self
+
+    def GetData(self, filepath):
+        try:
+            with File(filepath, mode='rt') as file:
+                jsonData = file.read()
+                dataDict = json.loads(jsonData)
+                return dataDict
+        except Exception as e:
+            print('Error: CiscoClassificationManager.GetData\n', e)
+
+
+

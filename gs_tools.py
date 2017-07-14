@@ -2,7 +2,7 @@
 This module is meant to be a collection of tools to simplify common task in AV control systems.
 Started: March 28, 2017 and appended to continuously
 '''
-print('Begin GST')
+
 
 import extronlib
 from extronlib import event, Version
@@ -25,13 +25,14 @@ import datetime
 import calendar
 import base64
 import re
+import random
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     print = lambda *args, **kwargs: None
 
-
+print('Begin GST')
 # *******************************************************************************
 
 # extronlib.ui *****************************************************************
@@ -412,59 +413,11 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
     def _ChunkSend(self, data):
         super().Send(data)
 
-
-class EthernetClientInterfaceEncrypted(EthernetClientInterface):
-    '''
-    This class uses AES 256 bit encryption
-    '''
-    def __init__(self, *args, **kwargs):
-        self._rxBuffer = ''
-
-        self._cipher = None
-
-        super().__init__(*args, **kwargs)
-        self._rxDataDecrypted = None
-
-    def SetEncryptionKey(self, key):
-        self._cipher = aes_tools.AES_Cipher(key)
-        self._encryptionKey = key
-        print(self, 'self._cipher=', self._cipher)
-        print(self, 'self._encryptionKey=', self._encryptionKey)
-
-    def Send(self, data):
-        print('EthernetClientInterfaceEncrypted.Send(data={})'.format(data))
-        if self._cipher:
-            data = self._cipher.encrypt(data)
-            pass
-        print('sending encrypted data={}'.format(data))
-        super().Send(data)
-
-    def Decrypt(self, data):
-        if self._cipher:
-            data = self._cipher.decrypt(data)
-            pass
-        return data
-
-    @property
-    def ReceiveDataDecrypted(self):
-        return _rxDataDecrypted
-
-    @ReceiveDataDecrypted.setter
-    def ReceiveDataDecrypted(self, func):
-        def newRx(interface, data):
-            data = self.Decrypt(data)
-            func(interface, data)
-        self._rxDataDecrypted = newRx
-        self.ReceiveData = newRx
-
-
-
-
 def get_parent(client_obj):
     '''
     This function is used to get the parent EthernetServerInterfaceEx from a ClientObject
     :param client_obj: extronlib.interface.EthernetServerInterfaceEx.ClientObject
-    :return:
+    :return: extronlib.interface.EthernetServerInterfaceEx
     '''
     for interface in EthernetServerInterfaceEx._all_servers_ex.values():
         if client_obj in interface.Clients:
@@ -2162,7 +2115,7 @@ class Keyboard():
 
 
 # ScrollingTable ****************************************************************
-ScrollingTable_debug = True
+ScrollingTable_debug = False
 
 
 class ScrollingTable():
@@ -3742,6 +3695,14 @@ def hash_it(string=''):
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
 
+def GetRandomPassword(length=512):
+    pw = ''
+    for i in range(length):
+        ch = random.choice(['1','2','3','4','5','6','7','8','9','0',
+                            'a','b','c','d','f'])
+        pw += ch
+    return pw
+
 timerDebug = False
 # Timer class (safer than recursive Wait objects per PD)
 class Timer:
@@ -5196,4 +5157,81 @@ PROCESSOR_CAPABILITIES['60-1416-01'] = { # IPL Pro CR88
     'Contact': 8,
     }
 
+def DeleteInterface(interface):
+    '''
+    Some interfaces are not actually deleted because GS does not allow this.
+    However, it does set the interface aside and if someone wishes to reinstantiate it again, they can.
+    '''
+    if isinstance(interface, extronlib.interface.EthernetServerInterface):
+        interface.Connected = None
+        interface.Disconnected = None
+        interface.ReceiveData = None
+        EthernetServerInterfaceEx.clear_port_in_use(interface.IPPort)
+
+    elif isinstance(interface, extronlib.interface.SerialInterface):
+        interface.Connected = None
+        interface.Disconnected = None
+        interface.ReceiveData = None
+        ProcessorDevice._make_port_available(interface.Port)
+
+    elif isinstance(interface, extronlib.interface.RelayInterface):
+        ProcessorDevice._make_port_available(interface.Port)
+
+
+def IsInterfaceAvailable(proc=None, ignoreKwargs=None, newKwargs=None):
+    '''
+    This function is meant to determine ahead of time if an interface is available on a processor.
+    Perhaps the programmer is going to delete an interface and replace it with another interface.
+    The programmer knows that they will not be able to create the new interface until the old interface is deleted,
+    but they want to be sure that if they delete the old interface, they will be able to create the new interface without any errors.
+    Otherwise my programmer friend will delete the old interface, try to create the new interface, but the new interface will fail.
+    Now my friend has no way to recover the old interface. And thats no fun.
+
+    It is possible that the new interface and old interface may share some attributes.
+    The "ignoreKwargs" parameter is used to ignore attributes that are present in both the old and new interfaces.
+
+    Example:
+    interface1 = SerialInterface(proc, 'COM1')
+
+    if not IsInterfaceAvailable(proc=proc, 'COM1'):
+        DeleteInterface(interface1) #if this line is commented out, the instantiation of interface2 will fail
+
+    interface2 = SerialInterface(proc, 'COM1')
+
+
+    return list of str indicating any errors, or True if port is available
+    '''
+    errors = []
+
+    if 'IPPort' in newKwargs and 'IPPort' not in ignoreKwargs:
+        if 'IPAddress' in newKwargs:
+            # We are checking a ethernet client
+            pass #clients are always available
+        else:
+            # We are checking an ethernet server
+            ipport = newKwargs['IPPort']
+            if EthernetServerInterface.port_in_use(ipport):
+                errors.append('The IPPort {} is already in use.'.format(ipport))
+
+    elif 'Port' in newKwargs and 'Port' not in ignoreKwargs:
+        port = newKwargs['Port']
+        if 'RLY' in port:
+            # We are checking a RelayInterface
+            if ProcessorDevice.port_in_use(port):
+                errors.append('The Relay Port {} is already in use.'.format(port))
+
+        elif 'COM' in port:
+            # We are checking a SerialInterface
+            if ProcessorDevice.port_in_use(port):
+                errors.append('The Serial Port {} is already in use.'.format(port))
+
+
+    if len(errors) == 0:
+        return True
+    else:
+        return errors
+
 print('End  GST')
+
+
+

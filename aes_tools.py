@@ -970,6 +970,8 @@ class AES_Cipher(AESModeOfOperationCTR):
     pass
 
 def GetKeyFromPhrase(phrase):
+    if isinstance(phrase, str):
+        phrase = phrase.encode()
     h = hashlib.sha256(phrase)
     return h.digest()
 
@@ -1198,9 +1200,15 @@ class File(extronlib.system.File):
         self._cipher = AES_Cipher(self._key)
 
     def write(self, data):
-        return super().write(self._cipher.encrypt(data))
+        if self._key is not None:
+            return super().write(self._cipher.encrypt(data))
+        else:
+            return super().write(data)
 
     def read(self):
-        self._cipher = AES_Cipher(self._key)
-        return self._cipher.decrypt(super().read())
+        if self._key is not None:
+            self._cipher = AES_Cipher(self._key)
+            return self._cipher.decrypt(super().read())
+        else:
+            return super().read()
 

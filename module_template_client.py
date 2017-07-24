@@ -37,11 +37,11 @@ class DeviceClass():
         self._regexMap.append((regex, callback))
 
     def _ConnectionHandler(self, interface, state):
-        print('EthernetClass._ConnectionHandler(interface{}, state={})'.format(interface, state))
+        print('DeviceClass._ConnectionHandler(interface{}, state={})'.format(interface, state))
         self._WriteStatus('ConnectionStatus', state)
 
     def _WriteStatus(self, command, value, qualifier=None):
-        print('EthernetClass._WriteStatus(command={}, value={}, qualifier={})'.format(command, value, qualifier))
+        print('DeviceClass._WriteStatus(command={}, value={}, qualifier={})'.format(command, value, qualifier))
         pass
         # commandFound = False
         # qualifierFound = False
@@ -69,7 +69,7 @@ class DeviceClass():
         pass
 
     def _ReceiveData(self, _, data):
-        print('EthernetClass._ReceiveData(data={})'.format(data))
+        print('DeviceClass._ReceiveData(data={})'.format(data))
         self._buffer += data.decode()
 
         for tup in self._regexMap:
@@ -87,7 +87,7 @@ class DeviceClass():
         self.Send(self.password)
 
     def Send(self, data):
-        print('EthernetClass.Send(data={})'.format(data))
+        print('DeviceClass.Send(data={})'.format(data))
         super().Send(data)
 
 

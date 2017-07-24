@@ -31,6 +31,9 @@ import random
 debug = False
 if not debug:
     print = lambda *args, **kwargs: None
+else:
+    #print = lambda *args, **kwargs: ProgramLog(str(args), 'info')
+    pass
 
 print('Begin GST')
 # *******************************************************************************
@@ -285,11 +288,64 @@ class MESet(extronlib.system.MESet):
 
 
 class Wait(extronlib.system.Wait):
-    """Functions that are decorated with Wait now are callable elsewhere."""
+    """Functions that are decorated with Wait now are callable elsewhere.
 
-    def __call__(self, function):
-        super().__call__(function)
-        return function
+    Exceptions that happen in waits wil now print the error message to TRACE as well as throwing the "Wait callback error" message in ProgramLog
+
+    The programmer can now pass arguments to Wait callbacks
+    for example:
+
+    @Wait(2, args=('one', 'two'))
+    def loop(arg1, arg2):
+        print('loop(arg1={}, arg2={})'.format(arg1, arg2))
+        raise Exception('loop Exception')
+
+    **OR**
+
+    def TestFunc(arg1, arg2):
+        print('TestFunc(arg1={}, arg2={})'.format(arg1, arg2))
+        raise Exception('TestFunc Exception')
+
+    Wait(3, TestFunc, args=('three', 'four'))
+
+    """
+
+    def __init__(self, *args, **kwargs):
+        if 'args' in kwargs:
+            self._userArgs = kwargs.pop('args')
+        else:
+            self._userArgs = None
+
+        if len(args) >= 2:
+            if callable(args[1]):
+                callback = args[1]
+                newCallback = self._getNewFunc(callback)
+                tempArgs = list(args)
+                tempArgs[1] = newCallback
+                newArgs = tuple(tempArgs)
+                args = newArgs
+
+        super().__init__(*args, **kwargs)
+
+    def _getNewFunc(self, oldFunc):
+        def newFunc():
+            try:
+                if self._userArgs is None:
+                    oldFunc()
+                else:
+                    oldFunc(*self._userArgs)
+
+            except Exception as e:
+                ProgramLog('Wait Exception: {}\nException in function:{}'.format(e, oldFunc), 'warning')
+                raise e
+
+        return newFunc
+
+    def __call__(self, callback):
+        newCallback = self._getNewFunc(callback)
+
+        super().__call__(newCallback)
+        return newCallback
 
 
 class File(extronlib.system.File):
@@ -1264,6 +1320,7 @@ if not File.Exists('connection_handler.log'):
 
 with File('connection_handler.log', mode='at') as file:
     file.write('\n{} - Processor Restarted\n\n'.format(time.asctime()))
+    file.close()
 
 _connection_status = {}
 
@@ -1646,9 +1703,9 @@ class PersistentVariables():
     def _CreateFileIfMissing(self):
         if not File.Exists(self.filename):
             # If the file doesnt exist yet, create a blank file
-            file = File(self.filename, mode='wt')
-            file.write(json.dumps({}))
-            file.close()
+            with File(self.filename, mode='wt') as file:
+                file.write(json.dumps({}))
+                file.close()
 
     def Set(self, varName, newValue):
         '''
@@ -1662,6 +1719,7 @@ class PersistentVariables():
         # load the current file
         with File(self.filename, mode='rt') as file:
             data = json.loads(file.read())
+            file.close()
 
         #get the old value
         oldValue = data.get(varName, None)
@@ -1677,6 +1735,7 @@ class PersistentVariables():
         # Write new file
         with File(self.filename, mode='wt') as file:
             file.write(json.dumps(data))
+            file.close()
 
     def Get(self, varName):
         '''
@@ -1688,9 +1747,9 @@ class PersistentVariables():
         # If the varName does not exist, return None
 
         # load the current file
-        file = File(self.filename, mode='rt')
-        data = json.loads(file.read())
-        file.close()
+        with File(self.filename, mode='rt') as file:
+            data = json.loads(file.read())
+            file.close()
 
         # Grab the value and return it
         try:
@@ -3301,6 +3360,7 @@ class UserInputClass:
 
         with File('calendar.json', mode='wt') as file:
             file.write(json.dumps(saveItems))
+            file.close()
 
     def _LoadCalData(self):
         if not File.Exists('calendar.json'):
@@ -3309,6 +3369,7 @@ class UserInputClass:
 
         with File('calendar.json', mode='rt') as file:
             saveItems = json.loads(file.read())
+            file.close()
 
             for saveItem in saveItems:
                 dt = datetime.datetime(**saveItem['datetime'])
@@ -3398,10 +3459,15 @@ class UserInputClass:
                    list_btn_scroll_up=None,  # Button object
                    list_btn_scroll_down=None,  # Button object
                    list_label_message=None,  # Button/Label object
+                   list_label_scroll=None,# Button/Label object
+
                    ):
 
         self._list_popup_name = list_popup_name
         self._list_table = ScrollingTable()
+
+        if list_label_message is not None:
+            self._list_table.register_scroll_updown_label(list_label_scroll)
 
         if list_btn_scroll_up:
             self._list_table.register_scroll_up_button(list_btn_scroll_up)
@@ -4578,6 +4644,7 @@ class UniversalConnectionHandler:
             write_str += '    {}:{}\n'.format('Kind', kind)
 
             file.write(write_str)
+            file.close()
 
     def _update_connection_status_serial_or_ethernetclient(self, interface, state, kind=None):
         '''
@@ -5155,6 +5222,17 @@ PROCESSOR_CAPABILITIES['60-1416-01'] = { # IPL Pro CR88
     'Power Ports': 0,
     'eBus': False,
     'Contact': 8,
+    }
+
+PROCESSOR_CAPABILITIES['60-1429-01'] = { # IPCP Pro 250
+    'Serial Ports': 2,
+    'IR/S Ports': 1,
+    'Digital I/Os': 4,
+    'FLEX I/Os': 0,
+    'Relays': 2,
+    'Power Ports': 0,
+    'eBus': True,
+    'Contact': 0,
     }
 
 def DeleteInterface(interface):

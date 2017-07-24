@@ -170,12 +170,14 @@ class Exchange():
                  ):
 
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
+        #self.httpURL = 'http://{0}/EWS/exchange.asmx'.format(server) #testing only
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]
         self._impersonation = impersonation
-        self.header = {'content-type': 'text/xml; charset=utf-8',
-                       'Authorization': 'Basic {}'.format(self.login)
-                       }
+        self.header = {
+            'content-type': 'text/xml',
+            'authorization': 'Basic {}'.format(self.login)
+            }
         self._calendarItems = []
 
         self._startOfWeek = None
@@ -256,12 +258,12 @@ class Exchange():
                 self._folderID = matchFolderInfo.group(1)
                 self._changeKey = matchFolderInfo.group(2)
 
-            print('self._folderID=', self._folderID)
-
     def UpdateCalendar(self, calendar=None):
         # gets the latest data for this week from exchange and stores it
         # if calendar is not None, this will check another users calendar
         # if calendar is None, it will check your own calendar
+
+        emailRegex = re.compile('.*?\@.*?\..*?')
 
         if calendar is None:
             parentFolder = '''
@@ -269,7 +271,9 @@ class Exchange():
                     <t:FolderId Id="{}" ChangeKey="{}" />
                 </m:ParentFolderIds>
                 '''.format(self._folderID, self._changeKey)
-        else:
+
+        elif emailRegex.search(calendar) is not None: #email address
+            print('emailRegex')
             parentFolder = '''
                 <m:ParentFolderIds>
                     <t:DistinguishedFolderId Id="calendar">
@@ -279,6 +283,18 @@ class Exchange():
                     </t:DistinguishedFolderId>
                   </m:ParentFolderIds>
                 '''.format(calendar)
+        else: #name
+            print('name')
+            parentFolder = '''
+                <m:ParentFolderIds>
+                    <t:DistinguishedFolderId Id="calendar">
+                      <t:Mailbox>
+                        <t:Name>{}</t:Name>
+                      </t:Mailbox>
+                    </t:DistinguishedFolderId>
+                  </m:ParentFolderIds>
+                '''.format(calendar)
+
 
         xmlbody = """<?xml version="1.0" encoding="utf-8"?>
                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -296,7 +312,8 @@ class Exchange():
                               <t:FieldURI FieldURI="item:Subject" />
                               <t:FieldURI FieldURI="calendar:Start" />
                               <t:FieldURI FieldURI="calendar:End" />
-                              <t:FieldURI FieldURI="calendar:Organizer" />
+                              <t:FieldURI FieldURI="calendar:Organizer">
+                              </t:FieldURI>
                               <t:FieldURI FieldURI="item:HasAttachments" />
                             </t:AdditionalProperties>
                           </m:ItemShape>
@@ -307,9 +324,36 @@ class Exchange():
                     </soap:Envelope>
                     """.format(self._soapHeader, self._startOfWeek, self._endOfWeek, parentFolder )
 
+        # """<?xml version="1.0" encoding="utf-8"?>
+        #                     <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        #                            xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+        #                            xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+        #                            xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+        #                       <soap:Header>
+        #                         {0}
+        #                       </soap:Header>
+        #                       <soap:Body>
+        #                         <m:FindItem Traversal="Shallow">
+        #                           <m:ItemShape>
+        #                             <t:BaseShape>IdOnly</t:BaseShape>
+        #                             <t:AdditionalProperties>
+        #                               <t:FieldURI FieldURI="item:Subject" />
+        #                               <t:FieldURI FieldURI="calendar:Start" />
+        #                               <t:FieldURI FieldURI="calendar:End" />
+        #                               <t:FieldURI FieldURI="calendar:Organizer" />
+        #                               <t:FieldURI FieldURI="item:HasAttachments" />
+        #                             </t:AdditionalProperties>
+        #                           </m:ItemShape>
+        #                           <m:CalendarView MaxEntriesReturned="100" StartDate="{1}" EndDate="{2}" />
+        #                           {3}
+        #                         </m:FindItem>
+        #                       </soap:Body>
+        #                     </soap:Envelope>
+        #                     """.format(self._soapHeader, self._startOfWeek, self._endOfWeek, parentFolder)
+
         # print('xtmbody=', xmlbody)
         response = self._SendHttp(xmlbody)
-        # print('response=', response)
+        print('response=', response)
         # response now holds all the calendar events between startOfWeek and endOfWeek
 
         regexCalendarItem = re.compile('<t:CalendarItem>.*?<\/t:CalendarItem>')
@@ -569,7 +613,13 @@ class Exchange():
         except Exception as e:
             print('_SendHttp Exception:\n', e)
             for item in dir(e):
-                print('e.{}'.format(item), '=', getattr(e, item))
+                try:
+                    print('e.{}'.format(item), '=', getattr(e, item))
+                except Exception as e2:
+                    print('e.{}'.format(item), '=', e2)
+            print('e.file.read()=', e.file.read())
+            print('e.fp.read()=', e.fp.read())
+            print('e.info()=', e.info())
             raise e
 
 
@@ -626,3 +676,38 @@ class Exchange():
                 if nextStartDT == calItem.Get('Start'):
                     returnCalItems.append(calItem)
             return returnCalItems
+
+    def GetItem(self, itemID, changeID):
+        # gets the latest data for this week from exchange and stores it
+        # if calendar is not None, this will check another users calendar
+        # if calendar is None, it will check your own calendar
+
+
+
+        xmlbody = """
+            <?xml version="1.0" encoding="utf-8"?>
+            <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+               xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages"
+               xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types"
+               xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+            <soap:Header>
+                {2}
+            </soap:Header>
+              <soap:Body>
+                <GetItem xmlns="http://schemas.microsoft.com/exchange/services/2006/messages">
+                  <ItemShape>
+                    <t:BaseShape>IdOnly</t:BaseShape>
+                    <t:AdditionalProperties>
+                      <t:FieldURI FieldURI="item:Subject"/>
+                    </t:AdditionalProperties>
+                  </ItemShape>
+                  <ItemIds>
+                    <t:ItemId Id="{0}" ChangeKey="{1}"/>
+                  </ItemIds>
+                </GetItem>
+              </soap:Body>
+            </soap:Envelope>""".format(itemID, changeID, self._soapHeader)
+
+        print('xmlbody=', xmlbody)
+        response = self._SendHttp(xmlbody)
+        print('GetItem response=', response)

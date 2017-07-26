@@ -1734,7 +1734,7 @@ class PersistentVariables():
 
         # Write new file
         with File(self.filename, mode='wt') as file:
-            file.write(json.dumps(data))
+            file.write(json.dumps(data, indent=4))
             file.close()
 
     def Get(self, varName):
@@ -3359,7 +3359,7 @@ class UserInputClass:
             saveItems.append(saveItem)
 
         with File('calendar.json', mode='wt') as file:
-            file.write(json.dumps(saveItems))
+            file.write(json.dumps(saveItems, indent=4))
             file.close()
 
     def _LoadCalData(self):
@@ -3880,6 +3880,9 @@ class Schedule:
 
         self._wait = Wait(waitSeconds, self._callback)
 
+    def Cancel(self):
+        self._wait.Cancel()
+
     def _callback(self):
         print('Schedule._callback, self.func={}, self.args={}, self.kwargs={},'.format(self._func, self._args,
                                                                                        self._kwargs))
@@ -4035,8 +4038,8 @@ class UniversalConnectionHandler:
 
     def maintain(self,
                  interface,
-                 keep_alive_query_cmd=None,
-                 keep_alive_query_qual=None,
+                 keep_alive_query_cmd=None, # Can be a module command like 'Power', or a raw string like 'q'
+                 keep_alive_query_qual=None, #For extron modules. Ex: {'ID': '1'}
                  poll_freq=5,  # how many seconds between polls
                  disconnect_limit=5,  # how many missed queries before a 'Disconnected' event is triggered
                  timeout=5 * 60,

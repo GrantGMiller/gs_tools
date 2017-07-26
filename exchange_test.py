@@ -6,11 +6,6 @@ exchange = exchange_interface.Exchange(
     password=exchange_credentials.password,
 )
 
-exchange.UpdateCalendar(calendar=None)
+exchange.UpdateCalendar('rnchallwaysignage1@extron.com')
 
 items = exchange.GetNextCalItems()
-for item in items:
-    itemId = item.Get('ItemId')
-    changeKey = item.Get('ChangeKey')
-
-    exchange.GetItem(itemId, changeKey)

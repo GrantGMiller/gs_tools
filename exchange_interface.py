@@ -18,7 +18,7 @@ offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altz
 offsetHours = offsetSeconds / 60 / 60 * -1
 MY_TIME_ZONE = offsetHours
 
-print('MY_TIME_ZONE=UTC{}'.format(MY_TIME_ZONE))
+print('MY_TIME_ZONE= UTC {}'.format(MY_TIME_ZONE))
 
 
 def ConvertTimeStringToDatetime(string):
@@ -678,6 +678,8 @@ class Exchange():
             return returnCalItems
 
     def GetItem(self, itemID, changeID):
+        # WIP 07/25/2017
+
         # gets the latest data for this week from exchange and stores it
         # if calendar is not None, this will check another users calendar
         # if calendar is None, it will check your own calendar

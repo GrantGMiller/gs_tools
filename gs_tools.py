@@ -28,11 +28,12 @@ import re
 import random
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
+    #Disable print statements
     print = lambda *args, **kwargs: None
 else:
-    #print = lambda *args, **kwargs: ProgramLog(str(args), 'info')
+    print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
     pass
 
 print('Begin GST')
@@ -663,7 +664,7 @@ class RelayInterface(extronlib.interface.RelayInterface):
                 return relay_interface
 
             elif relay_interface is None:
-                print('This is the first time this relay interface has been instantiated. call super new')
+                print('__new__ This is the first time this relay interface has been instantiated. call super new')
                 return super().__new__(cls)
         else:
             raise Exception(
@@ -685,7 +686,7 @@ class RelayInterface(extronlib.interface.RelayInterface):
             Port = kwargs['Port']
 
         if Port not in ProcessorDevice._relay_instances[Host.DeviceAlias].keys():
-            print('This is the first time this port has been init')
+            print('__init__ This is the first time this RelayInterface has been init')
             super().__init__(*args, **kwargs)
         else:
             print('This has been init before. do nothing')
@@ -720,13 +721,15 @@ class SerialInterface(extronlib.interface.SerialInterface):
                 return serial_interface
 
             elif serial_interface is None:
-                print('This is the first time this interface has been instantiated. call super new')
+                print('__new__ This is the first time this SerialInterface has been instantiated. call super new')
                 return super().__new__(cls)
         else:
             raise Exception(
                 'This com port is already in use.\nConsider using Host.make_port_available({})'.format(Port))
 
     def __init__(self, *args, **kwargs):
+        print('SerialInterface.__init__(args={}, kwargs={})'.format(args, kwargs))
+
         Host = None
         if len(args) > 0:
             Host = args[0]
@@ -740,8 +743,9 @@ class SerialInterface(extronlib.interface.SerialInterface):
             Port = kwargs['Port']
 
         if Port not in ProcessorDevice._serial_instances[Host.DeviceAlias].keys():
-            print('This is the first time this port has been init')
+            print('__init__ This is the first time this SerialInterface has been init')
             super().__init__(*args, **kwargs)
+            print('After super().__init__(*args, **kwargs)\nself=', self)
         else:
             print('This has been init before. do nothing')
             pass
@@ -758,6 +762,13 @@ class SerialInterface(extronlib.interface.SerialInterface):
             return '{}, Host.DeviceAlias={}, Port={}'.format(super().__str__(), self.Host.DeviceAlias, self.Port)
         except:
             return super().__str__()
+
+    '''2017-07-28
+    DO NOT OVERRIDE THIS __repr__ method!
+    It will cause SerialInterface instantiation to hang and you will waste an entire day tracking it down.
+    '''
+    #def __repr__(self):
+        #return str(self)
 
     def __iter__(self):
         '''
@@ -822,6 +833,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
     @classmethod
     def _register_new_serial_instance(cls, instance):
+        #instance is a SerialInterface object
         print('ProcessorDevice._register_new_serial_instance(instance={})'.format(instance))
         cls._serial_instances[instance.Host.DeviceAlias][instance.Port] = instance
 
@@ -830,6 +842,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
     @classmethod
     def _register_new_relay_instance(cls, instance):
+        #instance is a RelayInterface object
         print('ProcessorDevice._register_new_relay_instance(instance={})'.format(instance))
 
         cls._relay_instances[instance.Host.DeviceAlias][instance.Port] = instance
@@ -843,7 +856,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
         # return new/old serial instance
         if Port not in cls._serial_ports_in_use[Host.DeviceAlias]:
             print(
-                'The port is availble. Either becuase it has never been instantiated or cuz the programmer called "_make_port_available"')
+                'The port is availble. Either becuase it has never been instantiated or because the programmer called "_make_port_available"')
 
             if Port in cls._serial_instances[Host.DeviceAlias].keys():
                 print('A SerialInterface already exist. Re-initialize it and return the old serial_interface')
@@ -865,7 +878,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
         # return new/old serial instance
         if Port not in cls._relay_ports_in_use[Host.DeviceAlias]:
             print(
-                'The relay port is availble. Either becuase it has never been instantiated or cuz the programmer called "_make_port_available"')
+                'The relay port is availble. Either becuase it has never been instantiated or because the programmer called "_make_port_available"')
 
             if Port in cls._relay_instances[Host.DeviceAlias].keys():
                 print('A RelayInterface already exist. Return the old relay_interface')
@@ -1790,23 +1803,21 @@ def RemoteTrace(IPPort=1024):
 
         HandleConnection(
             RemoteTraceServer,
-            timeout=5 * 3000,
+            timeout=60*60*9,#60*60 = 1 hour
             # After this many seconds, a client who has not sent any data to the server will be disconnected.
         )
 
         result = RemoteTraceServer.StartListen()
-        print('RemoteTraceServer {}'.format(result))
+        ProgramLog('RemoteTraceServer {}'.format(result))
 
-    def print2(*args):  # override the print function to write to program log instead
-        string = ''
-        for arg in args:
-            string += ' ' + str(arg)
+    def NewPrint(*args):  # override the print function to write to program log instead
+        string = ' '.join(str(arg) for arg in args)
 
         for client in RemoteTraceServer.Clients:
-            client.Send(string + '\n')
-        print(string)
+            client.Send(string + '\r\n')
+        #ProgramLog(string, 'info')
 
-    return print2
+    return NewPrint
 
 
 def toPercent(Value, Min=0, Max=100):

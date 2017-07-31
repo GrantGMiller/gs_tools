@@ -399,8 +399,8 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
     def __str__(self):
         return '<gs_tools.EthernetClientInterface, IPAddress={}, IPPort={}, ServicePort={}>'.format(self.IPAddress, self.IPPort, self.ServicePort)
 
-    def __repr__(self):
-        return str(self)
+    #def __repr__(self):
+        #return str(self)
 
     def __iter__(self):
         '''
@@ -1140,8 +1140,8 @@ class UIDevice(extronlib.device.UIDevice):
     def __str__(self):
         return '<gs_tools.UIDevice object DeviceAlias={}, IPAddress={}>'.format(self.DeviceAlias, self.IPAddress)
 
-    def __repr__(self):
-        return str(self)
+    #def __repr__(self):
+        #return str(self)
 
     #def __setattr__(self, *args, **kwargs):
         #print('UIDevice.__setattr__:', args, kwargs)

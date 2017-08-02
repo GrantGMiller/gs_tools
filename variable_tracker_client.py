@@ -1,5 +1,5 @@
 from extronlib.interface import EthernetClientInterface, SerialInterface
-from extronlib.system import Wait
+from extronlib.system import Wait, ProgramLog
 
 import re
 import json
@@ -7,6 +7,9 @@ import json
 debug = False
 if not debug:
     print = lambda *args, **kwargs: None
+else:
+    # print = lambda *args, **kwargs: ProgramLog(str(args), 'info')
+    pass
 
 
 class DeviceClass():
@@ -16,7 +19,7 @@ class DeviceClass():
         }
 
         self._userCallbacks = {
-            # qualifier: value,
+            # qualifier: user_callback,
         }
 
         self._regexMap = [
@@ -39,25 +42,23 @@ class DeviceClass():
         self._regexMap.append((regex, callback))
 
     def _ConnectionHandler(self, interface, state):
-        print('EthernetClass._ConnectionHandler(interface{}, state={})'.format(interface, state))
+        print('VT.EthernetClass._ConnectionHandler(interface{}, state={})'.format(interface, state))
         self._WriteStatus('ConnectionStatus', state)
 
     def _WriteStatus(self, command, value, qualifier=None):
-        print('EthernetClass._WriteStatus(command={}, value={}, qualifier={})'.format(command, value, qualifier))
+        print('VT.EthernetClass._WriteStatus(command={}, value={}, qualifier={})'.format(command, value, qualifier))
 
         oldValue = self.ReadStatus(command, qualifier)
 
         if oldValue != value:
-            if qualifier in self._userCallbacks:
-                callback = self._userCallbacks[qualifier]
-                if callable(callback):
-                    callback(command, value, qualifier)
+            # do user callback
+            pass
 
         self._status[qualifier] = value
 
     def Set(self, command, value, qualifier=None):
         data = {'command': command, 'value': value, 'qualifier': qualifier}
-        jsonData = json.dumps(data)
+        jsonData = json.dumps(data, indent=4)
         self.Send(jsonData + '\r')
 
     def ReadStatus(self, command, qualifier=None):
@@ -65,13 +66,13 @@ class DeviceClass():
 
     def Update(self, command, qualifier=None):
         data = {'command': command, 'qualifier': qualifier}
-        self.Send(json.dumps(data) + '\r')
+        self.Send(json.dumps(data, indent=4) + '\r')
 
     def SubscribeStatus(self, command, qualifier, callback):
         self._userCallbacks[qualifier] = callback
 
     def _ReceiveData(self, _, data):
-        print('EthernetClass._ReceiveData(data={})'.format(data))
+        print('VT.EthernetClass._ReceiveData(data={})'.format(data))
         self._buffer += data.decode()
 
         for tup in self._regexMap:
@@ -82,7 +83,7 @@ class DeviceClass():
                 callback(match)
                 self._buffer = self._buffer.replace(match.group(0), '')
 
-        if len(self._buffer > 10000):
+        if len(self._buffer) > 10000:
             self._buffer = ''
 
     def _MatchPassword(self, match):
@@ -93,10 +94,10 @@ class DeviceClass():
         qualifier = data['qualifier']
         value = data['value']
 
-        self._WriteStatus(_, value, qualifier)
+        self._WriteStatus(None, value, qualifier)
 
     def Send(self, data):
-        print('EthernetClass.Send(data={})'.format(data))
+        print('VT.EthernetClass.Send(data={})'.format(data))
         super().Send(data)
 
 

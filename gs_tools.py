@@ -33,7 +33,7 @@ if not debug:
     #Disable print statements
     print = lambda *args, **kwargs: None
 else:
-    print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
+    #print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
     pass
 
 print('Begin GST')
@@ -226,7 +226,7 @@ class Button(extronlib.ui.Button):
             self.ToggleStateList = None
 
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
+        return '{}, 229Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Knob(extronlib.ui.Knob):
@@ -4110,7 +4110,11 @@ class UniversalConnectionHandler:
 
         else:  # Assuming a extronlib.device class
             if hasattr(interface, 'Online'):
-                interface.Online = self._get_controlscript_connection_callback(interface)
+                #print('interface={}'.format(interface))
+                newHandler = self._get_controlscript_connection_callback(interface)
+                #print('interface=', interface)
+                #print('newHandler=', newHandler)
+                interface.Online = newHandler
             if hasattr(interface, 'Offline'):
                 interface.Offline = self._get_controlscript_connection_callback(interface)
 

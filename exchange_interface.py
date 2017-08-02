@@ -19,6 +19,7 @@ offsetHours = offsetSeconds / 60 / 60 * -1
 MY_TIME_ZONE = offsetHours
 
 print('MY_TIME_ZONE= UTC {}'.format(MY_TIME_ZONE))
+print('CURRENT SYSTEM TIME=', time.asctime())
 
 
 def ConvertTimeStringToDatetime(string):

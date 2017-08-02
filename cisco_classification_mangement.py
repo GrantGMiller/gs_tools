@@ -135,7 +135,8 @@ class CiscoClassificationManager:
             data[key] = self._info[key]['last rx value']
 
         with File(filePath, mode='wt') as file:
-            file.write(json.dumps(data))
+            file.write(json.dumps(data, indent=4))
+            file.close()
 
         print('Data saved. filePath={}, data={}'.format(filePath, data))
 
@@ -147,7 +148,7 @@ class CiscoClassificationManager:
     def Reboot(self):
         # Note: this takes about 90+ seconds
         print('CiscoClassificationManager.Reboot')
-        self._interface.Send('xCommand Boot\r')
+        self._interface.Send('xCommand SystemUnit Boot\r')
 
     def RestoreFromFile(self, filePath, saveCurrentSettingsFirst=False):
         print('RestoreFromFile(filePath={}, saveCurrentSettingsFirst={})'.format(filePath, saveCurrentSettingsFirst))
@@ -159,6 +160,7 @@ class CiscoClassificationManager:
 
         with File(filePath, mode='rt') as file:
             data = json.loads(file.read())
+            file.close()
 
         for key in data:
             if key in self._info:
@@ -203,6 +205,7 @@ class CiscoClassificationManager:
             with File(filepath, mode='rt') as file:
                 jsonData = file.read()
                 dataDict = json.loads(jsonData)
+                file.close()
                 return dataDict
         except Exception as e:
             print('Error: CiscoClassificationManager.GetData\n', e)

@@ -2007,14 +2007,14 @@ class Keyboard():
             if state == 'Pressed':
                 button.SetState(1)
                 Char = button.Name
+                if Char is not None:
+                    if ShiftID is not None:
+                        if self.ShiftMode == 'Upper':
+                            Char = Char.upper()
+                        else:
+                            Char = Char.lower()
 
-                if ShiftID is not None:
-                    if self.ShiftMode == 'Upper':
-                        Char = Char.upper()
-                    else:
-                        Char = Char.lower()
-
-                self.AppendToString(Char)
+                    self.AppendToString(Char)
 
             elif state == 'Released':
                 if self.CapsLock == False:
@@ -2092,13 +2092,13 @@ class Keyboard():
 
             for button in self.KeyButtons:
                 Char = button.Name
+                #print('Keyboard.updateKeysShiftMode Char=', Char)
                 if Char:
                     if self.ShiftID is not None:
                         if self.ShiftMode == 'Upper':
                             Char = Char.upper()
                         else:
                             Char = Char.lower()
-
                         button.SetText(Char)
 
     # Define the class methods

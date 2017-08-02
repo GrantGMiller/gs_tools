@@ -2790,6 +2790,7 @@ class UserInputClass:
 
         self._kb_feedback_btn = None
         self._kb_text_feedback = None
+        self._kb_callback = None
         self._instances.append(self)
 
     def setup_file_explorer(self,

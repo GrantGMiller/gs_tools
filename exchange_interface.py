@@ -9,6 +9,10 @@ from base64 import b64encode, b64decode
 import datetime
 import time
 
+DEBUG = False
+if not DEBUG:
+    print = lambda *a, **k: None
+
 try:
     from extronlib.system import File
 except:

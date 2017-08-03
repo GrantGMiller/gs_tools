@@ -3893,6 +3893,7 @@ class Schedule:
         self._wait = Wait(waitSeconds, self._callback)
 
     def Cancel(self):
+        print('Schedule.Cancel()')
         self._wait.Cancel()
 
     def _callback(self):

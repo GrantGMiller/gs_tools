@@ -14,10 +14,19 @@ if not debug:
 class DeviceClass:
     def __init__(self):
         self._reMap = [
-            #(regex, callback), #tuple
+            # (regex, callback), #tuple
             ]
         self._buffers = {
-            #clientObject: '',
+            # clientObject: '',
+        }
+        self._regexStatusTag = {
+            # regex: 'status tag',
+        }
+        self._status = {
+            # 'status tag': value,
+        }
+        self._GenericResponses = {
+            # 'status tag': responseStr,
         }
 
         self.Connected = self._ConnectionHandler
@@ -25,10 +34,13 @@ class DeviceClass:
         self.ReceiveData = self._ReceiveData
 
         HandleConnection(self)
+        self._Initialize()
 
+    def _NewStatus(self, statusTag, newStatus):
+        self._status[statusTag] = newStatus
 
-    def _AddRegex(self, pattern, callback):
-        self._reMap.append(re.compile(pattern), callback)
+    def _GetStatusTag(self, regex):
+        return self._regexStatusTag.get(regex, 'Status Tag Not Found')
 
     def _ConnectionHandler(self, client, state):
         print('_ConnectionHandler(client={}, state={})'.format(client, state))
@@ -39,16 +51,63 @@ class DeviceClass:
 
     def _ReceiveData(self, client, data):
         print('_ReceiveData(client={}, data={}'.format(client, data))
+        if client not in self._buffers:
+            self._buffers[client] = ''
+        self._buffers[client] += data.decode()
         buffer = self._buffers[client]
-        buffer += data.decode()
+        print('buffer=', buffer)
 
         for regex, callback in self._reMap:
             for match in regex.finditer(buffer):
-                callback(match, client)
-                buffer = buffer.replace(match.group(0), '')
+                statusTag = self._regexStatusTag[regex]
+                currentStatus = self._status[statusTag]
 
-        if len(buffer) > 10000:
-            buffer = ''
+                callback(match, client, statusTag, currentStatus)
+
+                self._buffers[client] = self._buffers[client].replace(match.group(0), '')
+
+        if len(self._buffers[client]) > 10000:
+            self._buffers[client] = ''
+
+    #Set/Get *****************************************************************
+    def _AddRegex(self, pattern, callback, statusTag=None):
+        regex = re.compile(pattern)
+        self._reMap.append((regex, callback))
+
+        if statusTag is None:
+            statusTag = 'Status {}'.format(len(self._status))
+
+        self._status[statusTag] = None
+        self._regexStatusTag[regex] = statusTag
+
+    def _Initialize(self):
+
+        self._AddRegex('wcv\r', self._MatchUpdateGeneric, 'Verbose Mode')
+        self._AddRegex('w3cv\r', self._MatchSetGeneric, 'Verbose Mode')
+        self._GenericResponses['Verbose Mode'] = 'Vrb3\r\n'
+
+
+    def _MatchUpdateGeneric(self, match, client, statusTag, currentStatus):
+        print('_MatchUpdateGeneric')
+        response = self._GenericResponses.get(statusTag, '{}\r\n')
+        client.Send(response.format(currentStatus))
+
+    def _MatchSetGeneric(self, match, client, statusTag, currentStatus):
+        print('_MatchSetGeneric')
+        try:
+            newStatus = match.group(1)
+        except:
+            newStatus = None
+        self._NewStatus(statusTag, newStatus)
+        response = self._GenericResponses.get(statusTag, '{}\r\n')
+        client.Send(response.format(newStatus))
+
+    def Send(self, data):
+        print('Send: {}'.format(data))
+        super().Send(data)
+
+    def ReadStatus(self, tag):
+        return self._status.get(tag, None)
 
 class EthernetClass(EthernetServerInterfaceEx, DeviceClass):
     def __init__(self, *args, **kwargs):

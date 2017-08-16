@@ -1,20 +1,6 @@
-from extronlib.interface import EthernetClientInterface
-from extronlib.system import Wait
-from extronlib import event
-import time
+import aes_tools
 
-client = EthernetClientInterface('10.8.27.104', 3888)
+open('key.dat', mode='wb').write(aes_tools.GetRandomKey())
 
-@event(client, ['Connected', 'Disconnected'])
-def Connectionhandler(client, state):
-    print(client, state)
-
-@event(client, 'ReceiveData')
-def RxData(client, data):
-    print('client={}, data={}'.format(client, data))
-
-client.Connect()
-
-while True:
-    client.Send('wct\r')
-    time.sleep(0.9)
+c = aes_tools.AES_Cipher()
+c.en

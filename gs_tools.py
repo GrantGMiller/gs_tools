@@ -28,7 +28,7 @@ import re
 import random
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     #Disable print statements
     print = lambda *args, **kwargs: None
@@ -462,7 +462,7 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             try:
                 self._ChunkSend(Chunk)
                 ##print('Chunk', i, '=', Chunk)
-                time.sleep(0.001)  # 256bytes/0.001seconds = 2.5MB/s max transfer speed
+                time.sleep(0.001)  # 256bytes/0.001seconds = 2.5MB/s max transfer speed = 2.0 Mbps
                 pass
             except Exception as e:
                 print(e)
@@ -476,9 +476,13 @@ def get_parent(client_obj):
     :param client_obj: extronlib.interface.EthernetServerInterfaceEx.ClientObject
     :return: extronlib.interface.EthernetServerInterfaceEx
     '''
-    for interface in EthernetServerInterfaceEx._all_servers_ex.values():
-        if client_obj in interface.Clients:
-            return interface
+    for server in EthernetServerInterfaceEx._all_servers_ex.values():
+        print('get_parent\nserver={}\nClients={}\nclient_obj={}'.format(server, server.Clients, client_obj))
+        if client_obj in server.Clients:
+            return server
+
+    if hasattr(client_obj, '_parent'):
+        return client_obj._parent
 
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
@@ -2373,14 +2377,17 @@ class ScrollingTable():
         self._initialized = True #assuming that if the user is adding data to the table, then they are done setting up the table
         self._refresh_Wait.Restart()
 
+    def ClearMutex(self):
+        if self._cellMutex is True:
+            for cell in self._cells:
+                cell.SetState(0)
+
     def clear_all_data(self):
         if ScrollingTable_debug and debug: print('ScrollingTable.clear_all_data()')
         self._data_rows = []
         self.reset_scroll()
 
-        if self._cellMutex is True:
-            for cell in self._cells:
-                cell.SetState(0)
+        self.ClearMutex()
 
         self.IsScrollable()
         self._update_table()
@@ -2867,7 +2874,7 @@ class UserInputClass:
                 passthru=None,
                 message=None,
                 submitText='Submit',
-                submitCallback=None,
+                submitCallback=None, #(button, state),
                 ):
 
         if data is None:
@@ -2891,9 +2898,9 @@ class UserInputClass:
                 def self_btnSubmitEvent(button, state):
                     submitCallback(button, state)
 
-        def SubCallback(*args, **kwargs):
+        def SubCallback(dirNavObject, value, passthru=None):
             self._TLP.HidePopup(self._file_explorer_popupName)
-            callback(*args, **kwargs)
+            callback(self, value, self._file_explorer_passthru)
 
         self._dirNav.FileSelected = SubCallback
 
@@ -3664,14 +3671,17 @@ class UserInputClass:
         self._TLP.ShowPopup(self._kb_popup_name)
 
     def setup_boolean(self,
-                      bool_popup_name,  # str()
+            bool_popup_name,  # str()
 
-                      bool_btn_true,  # Button()
-                      bool_btn_false,  # Button()
-                      bool_btn_cancel=None,  # Button()
+            bool_btn_true,  # Button()
+            bool_btn_false,  # Button()
+            bool_btn_cancel=None,  # Button()
 
-                      bool_btn_message=None,
-                      ):
+            bool_btn_message=None,
+            bool_btn_long_message=None,
+            bool_btn_true_explaination=None,
+            bool_btn_false_explanation=None,
+            ):
         self._bool_callback = None
         self._bool_true_text = 'Yes'
         self._bool_false_text = 'No'
@@ -3683,6 +3693,9 @@ class UserInputClass:
         self._bool_btn_cancel = bool_btn_cancel
 
         self._bool_btn_message = bool_btn_message
+        self._bool_btn_long_message = bool_btn_long_message
+        self._bool_btn_true_explaination = bool_btn_true_explaination
+        self._bool_btn_false_explanation = bool_btn_false_explanation
 
         @event(self._bool_btn_true, 'Released')
         @event(self._bool_btn_false, 'Released')
@@ -3720,6 +3733,9 @@ class UserInputClass:
                     feedback_btn=None,
                     passthru=None,  # any object that you want to also come thru the callback
                     message=None,
+                    long_message=None,
+                    true_message=None,
+                    false_message=None,
                     true_text=None,
                     false_text=None,
                     ):
@@ -3743,6 +3759,22 @@ class UserInputClass:
             self._bool_btn_false.SetText(false_text)
         else:
             self._bool_btn_false.SetText('No')
+
+        if long_message:
+            self._bool_btn_long_message.SetText(long_message)
+        else:
+            self._bool_btn_long_message.SetText('')
+
+        if true_message:
+            self._bool_btn_true_explaination.SetText(true_message)
+        else:
+            self._bool_btn_true_explaination.SetText('')
+
+        if false_message:
+            self._bool_btn_false_explanation.SetText(false_message)
+        else:
+            self._bool_btn_false_explanation.SetText('')
+
 
         self._bool_btn_true.Host.ShowPopup(self._bool_popup_name)
 
@@ -4997,7 +5029,7 @@ def SortListDictByKey(aList, sortKey, reverse=False):
     if not isinstance(reverse, bool):
         raise Exception('Reverse parameter must be type bool')
 
-    return sorted(aList, key=lambda d: d[sortKey], reverse=reverse)
+    return sorted(aList, key=lambda d: str(d[sortKey]), reverse=reverse)
 
 
 def SortListOfDictsByKeys(aList, sortKeys=[], reverse=False):
@@ -5250,6 +5282,17 @@ PROCESSOR_CAPABILITIES['60-1429-01'] = { # IPCP Pro 250
     'Digital I/Os': 4,
     'FLEX I/Os': 0,
     'Relays': 2,
+    'Power Ports': 0,
+    'eBus': True,
+    'Contact': 0,
+    }
+
+PROCESSOR_CAPABILITIES['60-1417-01'] = { # IPCP Pro 350
+    'Serial Ports': 3,
+    'IR/S Ports': 2,
+    'Digital I/Os': 4,
+    'FLEX I/Os': 0,
+    'Relays': 4,
     'Power Ports': 0,
     'eBus': True,
     'Contact': 0,

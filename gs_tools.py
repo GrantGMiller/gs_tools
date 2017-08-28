@@ -34,6 +34,11 @@ if not debug:
     print = lambda *args, **kwargs: None
 else:
     #print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
+    oldPrint = print
+    def newPrint(*args, **kwargs):
+        time.sleep(0.0001)
+        oldPrint(*args, **kwargs)
+    print = newPrint
     pass
 
 print('Begin GST')
@@ -73,6 +78,7 @@ class Button(extronlib.ui.Button):
             self.AutoStateChange('Released', 0)
 
         self.Text = ''
+        self.SetVisible(True)
         self.ToggleStateList = None
 
         self.AllButtons.append(self)
@@ -238,6 +244,7 @@ class Label(extronlib.ui.Label):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.Text = ''
+        self.SetVisible(True)
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
         #justify='Left' means chop off the right side
@@ -299,7 +306,7 @@ class Wait(extronlib.system.Wait):
     @Wait(2, args=('one', 'two'))
     def loop(arg1, arg2):
         print('loop(arg1={}, arg2={})'.format(arg1, arg2))
-        raise Exception('loop Exception')
+        int('hello') #this causes an exception. Notice the full traceback message shows in the ProgramLog and Trace
 
     **OR**
 
@@ -308,6 +315,13 @@ class Wait(extronlib.system.Wait):
         raise Exception('TestFunc Exception')
 
     Wait(3, TestFunc, args=('three', 'four'))
+
+    **OR**
+    def TestFunc2(arg1):
+        print('TestFunc(arg1={})'.format(arg1))
+        raise Exception('TestFunc2 Exception')
+
+    Wait(3, TestFunc2, args=('three',)) #Note the extra comma to create a tuple
 
     """
 
@@ -337,9 +351,10 @@ class Wait(extronlib.system.Wait):
                     oldFunc(*self._userArgs)
 
             except Exception as e:
-                ProgramLog('Wait Exception: {}\nException in function:{}'.format(e, oldFunc), 'warning')
+                ProgramLog('Wait Exception: {}\nException in function:{}\nargs={}'.format(e, oldFunc, self._userArgs), 'error')
                 raise e
 
+        print('Wait.oldFunc=', oldFunc, 'args=', self._userArgs)
         return newFunc
 
     def __call__(self, callback):
@@ -365,6 +380,26 @@ class File(extronlib.system.File):
                 allFiles.append(dir+item)
         print('ListDirWithSub=', '\n'.join(allFiles))
         return allFiles
+
+    @classmethod
+    def DeleteDirRecursive(cls, dir='/'):
+        print('File.DeleteDirRecursive(dir={})'.format(dir))
+        items = File.ListDir(dir)
+        print('dir={}, items='.format(dir), items)
+        for item in items:
+            itempath = dir + '/' + item
+            try:
+                File.DeleteFile(itempath)
+            except Exception as e:
+                print('Exception DeleteFile:', e)
+            try:
+                File.DeleteDir(itempath)
+            except Exception as e:
+                print('Exception DeleteDir:', e)
+                if 'is not empty' in str(e):
+                    File.DeleteDirRecursive(itempath)
+
+        File.DeleteDir(dir)#now that its empty
 
 
 # extronlib.interface **************************************************************
@@ -476,7 +511,7 @@ def get_parent(client_obj):
     :param client_obj: extronlib.interface.EthernetServerInterfaceEx.ClientObject
     :return: extronlib.interface.EthernetServerInterfaceEx
     '''
-    for server in EthernetServerInterfaceEx._all_servers_ex.values():
+    for server in EthernetServerInterfaceEx._all_servers_ex.copy().values():
         print('get_parent\nserver={}\nClients={}\nclient_obj={}'.format(server, server.Clients, client_obj))
         if client_obj in server.Clients:
             return server
@@ -962,7 +997,11 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
             pass
 
         if self not in self._allProcessorDevices:
-            StartVTLPServer(self.IPAddress)
+            try:
+                StartVTLPServer(self.IPAddress)
+            except Exception as e:
+                print(e) #probably a secondary processor
+
             self._allProcessorDevices.append(self)
 
     def port_in_use(self, port_str):
@@ -1812,10 +1851,10 @@ def RemoteTrace(IPPort=1024):
         )
 
         result = RemoteTraceServer.StartListen()
-        ProgramLog('RemoteTraceServer {}'.format(result))
+        ProgramLog('RemoteTraceServer {}'.format(result), 'info')
 
     def NewPrint(*args):  # override the print function to write to program log instead
-        string = ' '.join(str(arg) for arg in args)
+        string = '\r\n' + str(time.time()) + ': ' + ' '.join(str(arg) for arg in args)
 
         for client in RemoteTraceServer.Clients:
             client.Send(string + '\r\n')
@@ -2189,7 +2228,7 @@ class Keyboard():
 
 
 # ScrollingTable ****************************************************************
-ScrollingTable_debug = False
+ScrollingTable_debug = True
 
 
 class ScrollingTable():
@@ -2199,19 +2238,38 @@ class ScrollingTable():
         Represents a single cell in a scrolling table
         '''
 
-        def __init__(self, parent_table, row, col, btn=None, callback=None):
+        def __init__(self, parent_table, row, col, btn=None,
+                pressedCallback=None,
+                tappedCallback=None,
+                heldCallback=None,
+                repeatedCallback=None,
+                releasedCallback=None,
+                ):
             self._parent_table = parent_table
             self._row = row
             self._col = col
             self._btn = btn
-            self._callback = callback
+            self._btnNewCallbacks = {
+                'Pressed': pressedCallback,
+                'Tapped': tappedCallback,
+                'Held': heldCallback,
+                'Repeated': repeatedCallback,
+                'Released': releasedCallback,
+                }
             self._Text = ''
+            self._btn.SetState(0)
 
-            OldHandler = self._btn.Released
+            oldHandlers = {
+                'Pressed': self._btn.Pressed,
+                'Tapped': self._btn.Tapped,
+                'Held': self._btn.Held,
+                'Repeated': self._btn.Repeated,
+                'Released': self._btn.Released,
+                }
 
             def NewHandler(button, state):
                 if ScrollingTable_debug and debug: print(
-                    'Cell NewHandler(\n button={}\n state={}'.format(button, state))
+                    'Cell NewHandler(\n button={}\n state={})\nself._btnNewCallbacks={}'.format(button, state, self._btnNewCallbacks))
 
                 # Handle Mutually exclusive cells
                 if self._parent_table._cellMutex == True:
@@ -2221,13 +2279,14 @@ class ScrollingTable():
                         else:
                             cell.SetState(1)
 
-                # Do the new callback
-                if OldHandler:
-                    OldHandler(button, state)
-                if self._callback:
-                    self._callback(self._parent_table, self)
+                if oldHandlers[state] is not None:
+                    oldHandlers[state](button, state)
 
-            self._btn.Released = NewHandler
+                if self._btnNewCallbacks[state]:
+                    self._btnNewCallbacks[state](self._parent_table, self)
+
+            for state in oldHandlers:
+                setattr(self._btn, state, NewHandler)
 
         def SetText(self, text):
             if self._Text is not text:
@@ -2251,8 +2310,7 @@ class ScrollingTable():
             return self._btn
 
         def __str__(self):
-            return 'Cell Object:\nrow={}\ncol={}\nbtn={}\ncallback={}'.format(self._row, self._col, self._btn,
-                                                                              self._callback)
+            return 'Cell Object:\nrow={}\ncol={}\nbtn={}'.format(self._row, self._col, self._btn)
 
     # class ********************************************************************
     def __init__(self):
@@ -2270,6 +2328,11 @@ class ScrollingTable():
         self._table_header_order = []
 
         self._cell_pressed_callback = None
+        self._cell_tapped_callback = None
+        self._cell_held_callback = None
+        self._cell_repeated_callback = None
+        self._cell_released_callback = None
+
         self._scroll_updown_level = None
         self._scroll_up_button = None
         self._scroll_down_button = None
@@ -2281,6 +2344,7 @@ class ScrollingTable():
         self._scroll_leftright_label = None
 
         self._cellMutex = False
+        self._freeze = False
 
         # _cell_pressed_callback should accept 2 params; the scrolling table object, and the cell object
 
@@ -2304,10 +2368,60 @@ class ScrollingTable():
 
     @CellPressed.setter
     def CellPressed(self, func):
+        print('CellPressed.setter')
         # func should accept two params the ScrollingTable object and the Cell object
         self._cell_pressed_callback = func
         for cell in self._cells:
-            cell._callback = func
+            cell._btnNewCallbacks['Pressed'] = func
+
+    @property
+    def CellTapped(self):  # getter
+        return self._cell_tapped_callback
+
+    @CellTapped.setter
+    def CellTapped(self, func):
+        print('CellTapped.setter')
+        # func should accept two params the ScrollingTable object and the Cell object
+        self._cell_tapped_callback = func
+        for cell in self._cells:
+            cell._btnNewCallbacks['Tapped'] = func
+
+    @property
+    def CellHeld(self):  # getter
+        return self._cell_held_callback
+
+    @CellHeld.setter
+    def CellHeld(self, func):
+        print('CellHeld.setter')
+        # func should accept two params the ScrollingTable object and the Cell object
+        self._cell_held_callback = func
+        for cell in self._cells:
+            cell._btnNewCallbacks['Held'] = func
+
+    @property
+    def CellRepeated(self):  # getter
+        return self._cell_repeated_callback
+
+    @CellRepeated.setter
+    def CellRepeated(self, func):
+        print('CellRepeated.setter')
+        # func should accept two params the ScrollingTable object and the Cell object
+        self._cell_repeated_callback = func
+        for cell in self._cells:
+            cell._btnNewCallbacks['Repeated'] = func
+
+    @property
+    def CellReleased(self):  # getter
+        return self._cell_released_callback
+
+    @CellReleased.setter
+    def CellReleased(self, func):
+        print('CellReleased.setter')
+        # func should accept two params the ScrollingTable object and the Cell object
+        self._cell_released_callback = func
+        for cell in self._cells:
+            cell._btnNewCallbacks['Released'] = func
+
 
     def SetCellMutex(self, state):
         # Setting this true will highlight a row when it is pressed
@@ -2353,12 +2467,16 @@ class ScrollingTable():
         example:
         ScrollingTable.register_row(row_number=1, Button(TLP, 1), Button(TLP, 2) )
         '''
-        index = 0
-        for arg in args:
+        for index, arg in enumerate(args):
             arg.SetText('')
             col_number = index
-            self.register_cell(row_number, col_number, btn=arg, callback=self._cell_pressed_callback)
-            index += 1
+            self.register_cell(row_number, col_number, btn=arg,
+                pressedCallback = self._cell_pressed_callback,
+                tappedCallback = self._cell_tapped_callback,
+                heldCallback = self._cell_held_callback,
+                repeatedCallback = self._cell_repeated_callback,
+                releasedCallback = self._cell_released_callback,
+                )
 
         self._refresh_Wait.Restart()
 
@@ -2548,8 +2666,15 @@ class ScrollingTable():
 
         self._update_table()
 
+    def freeze(self, state):
+        #If the programmer knows they are going to be updating a bunch of data. They can freeze the table, do all their updates, then unfreeze it.
+        #Unfreezing will update the table
+        self._freeze = state
+        if state is False:
+            self._update_table() #immediate update
+
     def _update_table(self):
-        if self._initialized:
+        if self._initialized and not self._freeze:
             if ScrollingTable_debug and debug: print('ScrollingTable._update_table()')
 
             # iterate over all the cell objects
@@ -2800,6 +2925,11 @@ class UserInputClass:
         self._kb_callback = None
         self._instances.append(self)
 
+    def set_file_explorer_parameters(self, d):
+        for key, value in d.items():
+            method = getattr(self._dirNav, key)
+            method(value)
+
     def setup_file_explorer(self,
             lblCurrentDirectory=None,
             btnScrollUp=None,
@@ -2835,6 +2965,7 @@ class UserInputClass:
         self._file_explorer_getFileCallback = None
 
         self._dirNav.FileSelected = self._file_explorer_fileSelectedCallback
+        self._dirNav.FileHeld = self._file_explorer_fileHeldCallback
 
         if btnClosePopup:
             @event(btnClosePopup, 'Released')
@@ -2854,6 +2985,59 @@ class UserInputClass:
 
         if self._file_explorer_popupName is not None:
             self._TLP.HidePopup(self._file_explorer_popupName)
+
+    def _file_explorer_fileHeldCallback(self, dirNav, filepath):
+        print('_file_explorer_fileHeldCallback(dirNav={}, filepath={})'.format(dirNav, filepath))
+
+        def DirNavActionCallback(input, value, passthru):
+            filepath = passthru['filepath']
+
+            if 'Delete' in value:
+                if self._dirNav.IsFile(filepath):
+                    File.DeleteFile(filepath)
+                    self._dirNav.UpdateData()
+
+                elif self._dirNav.IsDirectory(filepath):
+                    File.DeleteDirRecursive(filepath)
+                    self._dirNav.UpdateData()
+
+            elif 'Make New Directory' == value:
+                self.make_new_directory(
+                    data=None, #internal file system
+                    callback=None,
+                    passthru=None,
+                    makeDir=True, #whether to actually create the dir, False will just return the new path to the user, True will actually create the dir in the internal filesystem
+                    )
+
+            elif 'Make New File' == value:
+                self.make_new_file(
+                    data=None, #internal file system
+                    callback=None,
+                    feedback_btn=None,
+                    passthru=None,
+                    extension=None, #'.json', '.dat', etc...
+                    keyboardPopupName=None,
+                    )
+
+        options = []
+        if self._dirNav.AllowMakeNewFolder():
+            options.append('Make New Directory')
+
+        if self._dirNav.AllowMakeNewFile():
+            options.append('Make New File')
+
+        if self._dirNav.AllowDelete() and (self._dirNav.IsFile(filepath) or self._dirNav.IsDirectory(filepath)):
+            options.append('Delete this {}'.format(self._dirNav.GetType(filepath)))
+
+        self.get_list(
+            options=options,  # list()
+            callback=DirNavActionCallback,
+            # function - should take 2 params, the UserInput instance and the value the user submitted
+            feedback_btn=None,
+            passthru={'filepath': filepath},  # any object that you want to pass thru to the callback
+            message='Choose an action.',
+            sort=True,
+            )
 
     def file_explorer_register_row(self, *args, **kwargs):
         '''
@@ -2875,7 +3059,13 @@ class UserInputClass:
                 message=None,
                 submitText='Submit',
                 submitCallback=None, #(button, state),
+                startingDir=None
                 ):
+
+        self._dirNav.SetShowFiles(True)
+
+        if startingDir is not None:
+            self._dirNav.SetCurrentDirectory(startingDir)
 
         if data is None:
             data = File.ListDirWithSub()
@@ -2916,36 +3106,25 @@ class UserInputClass:
         if data is None:
             data = File.ListDirWithSub()
 
-        def getNewDirMasterDirectory(input, value, passthru2=None):
-            newFolderName = passthru2
-            newMasterDir = value
-
-            if makeDir == True:
-                File.MakeDir(value+passthru2)
-
-            if callable(callback):
-                callback(self, value+passthru2, passthru)
+        self._dirNav.SetShowFiles(False)
 
         def getNewDirNameCallback(input, value, passthru3=None):
             newFolderName = value
+            currentDir = self._dirNav.GetDir()
+            File.MakeDir(currentDir + '/' + newFolderName)
+            self._dirNav.UpdateData()
 
-            #let the user choose which master directory to put this sub directory in
-            self.get_directory(
-                data=data,
-                callback=getNewDirMasterDirectory,
-                feedback_btn=None,
-                passthru=newFolderName,
-                message='Choose a master folder.'.format(newFolderName),
-                )
+
+        popup = self._kb_other_popups.get('AlphaNumeric', self._kb_popup_name)
 
         self.get_keyboard(
-            kb_popup_name=self._kb_popup_name,
+            kb_popup_name=popup,
             callback=getNewDirNameCallback, # function - should take 2 params, the UserInput instance and the value the user submitted
             feedback_btn=None,
             password_mode=False,
             text_feedback=None,  # button()
             passthru=None,  # any object that you want to also come thru the callback
-            message='Enter a new name for the folder.',
+            message='Enter a name for the new directory.',
             )
 
     def make_new_file(self,
@@ -2960,11 +3139,11 @@ class UserInputClass:
         returns: path to the new file. THe user will have to use File(path, mode='wt') to actually write data to the file
         return type: str (example: '/folder1/subfolder2/filename.txt')
         '''
+
+        self._dirNav.SetShowFiles(False)
+
         if keyboardPopupName is None:
             keyboardPopupName = self._kb_popup_name
-
-        if data is None:
-            data = File.ListDirWithSub()
 
         if extension is None:
             extension = '.dat'
@@ -2982,7 +3161,7 @@ class UserInputClass:
 
             #let the user choose which directory to save this file to
             self.get_directory(
-                data=data,
+                data=None,
                 callback=newFileDirectoryCallback,
                 feedback_btn=None,
                 passthru=value,
@@ -3006,21 +3185,10 @@ class UserInputClass:
                 passthru=None,
                 message=None,
                 ):
+        self._dirNav.SetShowFiles(False)
 
         if data is None:
             data = File.ListDirWithSub()
-
-        newData = []
-        if data is not None:
-            for item in data:
-                if not item.endswith('/'):
-                    #change this '/folderA/file1.txt' to this '/folderA/'
-                    item = '/'.join(item.split('/')[:-1]) + '/'
-
-                if item not in newData:
-                    newData.append(item)
-
-        data = newData
 
         if message is None:
             message = 'Select a folder'
@@ -3479,11 +3647,15 @@ class UserInputClass:
                    list_btn_scroll_down=None,  # Button object
                    list_label_message=None,  # Button/Label object
                    list_label_scroll=None,# Button/Label object
+                   list_level_scroll=None,
 
                    ):
 
         self._list_popup_name = list_popup_name
         self._list_table = ScrollingTable()
+
+        if list_level_scroll is not None:
+            self._list_table.register_scroll_updown_level(list_level_scroll)
 
         if list_label_message is not None:
             self._list_table.register_scroll_updown_label(list_label_scroll)
@@ -3588,9 +3760,10 @@ class UserInputClass:
         self._TLP.ShowPopup(self._list_popup_name)
 
     def setup_keyboard(self,
-                       kb_popup_name,  # str()
+                       kb_popup_name,  # str() #default popup name
                        kb_btn_submit,  # Button()
                        kb_btn_cancel=None,  # Button()
+                       kb_other_popups = {}, # {'Integer': 'User Input - Integer', 'Float': 'User Input - Float', 'AlphaNumeric': 'User Input - AlphaNumeric'}
 
                        KeyIDs=None,  # list()
                        BackspaceID=None,  # int()
@@ -3602,6 +3775,7 @@ class UserInputClass:
                        ):
 
         self._kb_popup_name = kb_popup_name
+        self._kb_other_popups = kb_other_popups
         self._kb_btn_message = kb_btn_message
 
         @event(kb_btn_submit, 'Released')
@@ -3876,6 +4050,9 @@ class Timer:
     def Cancel(self):
         # To easily replace a Wait object
         self.Stop()
+
+    def __str__(self):
+        return '<gs_tools.Timer>\n_func={}\nt={}'.format(self._func, self._t)
 
 
 def GetDatetimeKwargs(dt):
@@ -4877,10 +5054,40 @@ class DirectoryNavigationClass:
         self._waitUpdateTable = Wait(0.1, self._UpdateTable)
         self._waitUpdateTable.Cancel()
 
-        self._table.CellPressed = self._CellPressed
+        self._table.CellTapped = self._CellTapped
         self._fileSelectedCallback = None
 
+        self._table.CellHeld = self._CellHeld
+        self._fileHeldCallback = None
+
+        self._allowChangeDirectory = True
+        self._allowMakeNewFile = True
+        self._allowMakeNewFolder = True
+        self._showCurrentDirectory = True
+        self._allowDelete = True
+
+        self._directoryLock = '/' #dont allow the user to go higher than this dir
+        self._showFiles = True
+
+    def SetShowFiles(self, state):
+        self._showFiles = state
+        self._UpdateTable()
+
+    def SetCurrentDirTextLen(self, length):
+        length = int(length)
+        self._limitStringLen = length
+
+    def SetDirectoryLock(self, dir):
+        self._directoryLock = dir
+        self.SetCurrentDirectory(dir)
+
+    def SetCurrentDirectory(self, dir):
+        self._currentDirectory = dir
+        self._UpdateTable()
+
     def RegisterRow(self, rowNumber, btnIcon, btnSelection):
+        if btnIcon._holdTime is None:
+            btnIcon._holdTime = 1
         self._table.register_row_buttons(rowNumber, btnSelection, btnIcon)
 
     def NavigateUp(self):
@@ -4889,9 +5096,12 @@ class DirectoryNavigationClass:
             self._currentDirectory = self._currentDirectory.replace(dropDir, '')
             self._waitUpdateTable.Restart()
 
-    def UpdateData(self, newData):
+    def UpdateData(self, newData=None):
+        print('UpdateData(newData={})'.format(newData))
+        if newData == None:
+            newData = File.ListDirWithSub()
         self._data = newData
-        self._waitUpdateTable.Restart()
+        self._UpdateTable()
 
     def _CurrentDirIsValid(self):
         if not self._currentDirectory.endswith('/'):
@@ -4904,38 +5114,92 @@ class DirectoryNavigationClass:
         return False
 
     def _UpdateTable(self):
+        print('DirectoryNavigationClass._UpdateTable()')
         try:
             #Verify the self._currentDirectory is valid
+            print('_UpdateTable self._currentDirectory=', self._currentDirectory)
+            print('_UpdateTable self._directoryLock=', self._directoryLock)
+            if self._directoryLock not in self._currentDirectory:
+                self._currentDirectory = self._directoryLock
+
             if not self._CurrentDirIsValid():
-                self._currentDirectory = '/'
+                self._currentDirectory = self._directoryLock
+
+            print('_UpdateTable self._allowChangeDirectory=', self._allowChangeDirectory)
+            print('_UpdateTable self._btnNavUp.Visible=', self._btnNavUp.Visible)
+            print('_UpdateTable self._btnNavUp=', self._btnNavUp)
+
+            if self._allowChangeDirectory is True:
+                if self._currentDirectory == self._directoryLock:
+                    if self._btnNavUp.Visible is True:
+                        print('self._btnNavUp.SetVisible(False)')
+                        self._btnNavUp.SetVisible(False)
+                else:
+                    if self._btnNavUp.Visible is False:
+                        print('self._btnNavUp.SetVisible(True)')
+                        self._btnNavUp.SetVisible(True)
+            else:
+                if self._btnNavUp.Visible is True:
+                    print('else self._btnNavUp.SetVisible(False)')
+                    self._btnNavUp.SetVisible(False)
+
+            print('_UpdateTable self._lblCurrentDirectory=', self._lblCurrentDirectory)
+            print('_UpdateTable self._showCurrentDirectory=', self._showCurrentDirectory)
+            if self._showCurrentDirectory is True:
+                if self._lblCurrentDirectory.Visible is False:
+                    print('self._lblCurrentDirectory.SetVisible(True)')
+                    self._lblCurrentDirectory.SetVisible(True)
+            else:
+                if self._lblCurrentDirectory.Visible is True:
+                    print('self._lblCurrentDirectory.SetVisible(False)')
+                    self._lblCurrentDirectory.SetVisible(False)
 
             #Update the table with data
-            self._table.clear_all_data()
+            self._table.freeze(True)
+
+            print('_UpdateTable self._data=', self._data)
             if self._data is not None:
-
-                subDirectories = []
+                #Add missing data
+                currentData = []
                 for item in self._data:
+                    print('item=', item)
                     #Determine if the item is a folder or file
-                    if item.startswith(self._currentDirectory):
-                        itemMinusCurrent = item[len(self._currentDirectory):]
-                        print('itemMinusCurrent=', itemMinusCurrent)
-                        if len(itemMinusCurrent.split('/')) is 1:
-                            #this item is a file in the current directory
-                            name = itemMinusCurrent
-                            folderIcon = ' '
-                        else:
-                            #this item is a sub-directory
-                            name = itemMinusCurrent.split('/')[0]
-                            if name not in subDirectories:
-                                subDirectories.append(name)
-                                folderIcon = '\xb1'#arrow icon
-                            else:
-                                continue #only add the sub-directories once
+                    if item.startswith(self._currentDirectory): #only deal with items in the current directory
+                        print('item.startswith(self._currentDirectory)')
+                        if self.IsInCurrentDirectory(item):
+                            print('self.IsInCurrentDirectory(item)')
+                            itemMinusCurrent = item[len(self._currentDirectory):]
+                            if itemMinusCurrent is not '':
+                                print('itemMinusCurrent is not ""')
 
-                        self._table.add_new_row_data({'entry': str(name), 'folderIcon': folderIcon,})
+                                if self.IsFile(item):
+                                    folderIcon = ' '
+                                    if not self._showFiles:
+                                        continue
 
+                                elif self.IsDirectory(item):
+                                    folderIcon = '\xb1'
+                                    itemMinusCurrent = itemMinusCurrent[:-1] #chop off the extra '/' at the end of directories
+
+                                else:
+                                    folderIcon = '?'
+
+                                data = {'entry': str(itemMinusCurrent), 'folderIcon': folderIcon,}
+                                if not self._table.has_row(data):
+                                    self._table.add_new_row_data(data)
+                                currentData.append(data)
+
+                #remove leftover data
+                print('_UpdateTable currentData=', currentData)
+                print('_UpdateTable self._table.get_row_data()', self._table.get_row_data())
+                for row in self._table.get_row_data():
+                    if row not in currentData:
+                        self._table.delete_row(row)
+
+                #Sort with the folders at the top
                 self._table.sort_by_column_list([1,0], reverse=True)
-                #self._table.sort_by_column(0)
+
+                self._table.freeze(False)
 
 
             #Update the current directory label
@@ -4945,33 +5209,79 @@ class DirectoryNavigationClass:
                 else:
                     self._lblCurrentDirectory.SetText('<No Data>')
 
-            #Update the NavUp button
-            if self._btnNavUp is not None:
-                if self._data is None or self._currentDirectory == '/':
-                    self._btnNavUp.SetVisible(False)
-                else:
-                    self._btnNavUp.SetVisible(True)
-
-
         except Exception as e:
             print('Exeption DirectoryNavigationClass._UpdateTable\n', e)
             print('item=', item)
 
-    def IsFile(self, name):
+    def IsFile(self, filepath):
+        print('IsFile(filepath={})'.format(filepath))
+        name = filepath.split('/')[-1]
+        if name == '':
+            print('IsFile return False')
+            return False
+
         for item in self._data:
             if name in item:
                 if name == item.split('/')[-1]:
+                    print('IsFile return True')
                     return True
 
+        print('IsFile return False')
         return False
 
-    def IsDirectory(self, name):
+    def IsDirectory(self, path):
+        print('IsDirectory(path={})'.format(path))
+        #path may end in '/' or may not
+        #examples path='TEST1026', path='TEST1026/', path='image.png'(return False)
         for item in self._data:
-            if name in item:
-                if name != item.split('/')[-1]:
+            if item.endswith('/'):
+                #item is a directory
+                if item.endswith(path):
+                    print('IsDirectory return True')
                     return True
+                else:
+                    name = path.split('/')[-1]
+                    if name == item.split('/')[-2]:
+                        #'/Farm_Network_Profiles/TEST1026/'.split('/') = ['', 'Farm_Network_Profiles', 'TEST1026', '']
+                        print('IsDirectory return True')
+                        return True
+
+        print('IsDirectory return False')
+        return False
+
+    def IsInCurrentDirectory(self, filepath):
+        #Return true if the item is in the current directory
+        #Return false if it is in a super/sub directory
+        print('IsInCurrentDirectory filepath=', filepath)
+
+        if filepath.startswith(self._currentDirectory):
+            pathMinusCurrent = filepath[len(self._currentDirectory):]
+            print('IsInCurrentDirectory pathMinusCurrent=', pathMinusCurrent)
+            print('self.IsDirectory({})='.format(filepath), self.IsDirectory(filepath))
+            print('self.IsFile({})='.format(filepath), self.IsFile(filepath))
+
+            if self.IsDirectory(filepath):
+                print('IsInCurrentDirectory IsDirectory')
+                print("len(pathMinusCurrent.split('/'))=", len(pathMinusCurrent.split('/')))
+                if len(pathMinusCurrent.split('/')) <= 2:
+                    return True
+                else:
+                    return False
+            elif self.IsFile(filepath):
+                print('IsInCurrentDirectory IsFile')
+                print("len(pathMinusCurrent.split('/'))=", len(pathMinusCurrent.split('/')))
+                if len(pathMinusCurrent.split('/')) == 1:
+                    return True
+                else:
+                    return False
 
         return False
+
+    def GetType(self, name):
+        if self.IsFile(name):
+            return 'File'
+        elif self.IsDirectory(name):
+            return 'Directory'
 
     def ChangeDirectory(self, newDir):
         if not newDir.endswith('/'):
@@ -4979,17 +5289,32 @@ class DirectoryNavigationClass:
 
         self._currentDirectory = newDir
 
-    def _CellPressed(self, table, cell):
+    def _CellTapped(self, table, cell):
+        print('DirectoryNavigationClass._CellTapped(table={}, cell={})\nself._fileSelectedCallback={}'.format(table, cell, self._fileSelectedCallback))
         row = cell.get_row()
         value = self._table.get_cell_value(row, 0)
+        path = self._currentDirectory + value
+        if value == '':
+            return
+
         print('value=', value)
-        if self.IsDirectory(value):
-            self.ChangeDirectory(self._currentDirectory + value + '/')
+        print('path=', path)
+        if self.IsDirectory(path):
+            self.ChangeDirectory(path + '/')
             self._waitUpdateTable.Restart()
 
-        if self.IsFile(value):
+        elif self.IsFile(path):
             if callable(self._fileSelectedCallback):
                 self._fileSelectedCallback(self, self._currentDirectory + value)
+
+    def _CellHeld(self, table, cell):
+        #This is used for providing the user with more options like: Deleting a file/folder, Creating a new file/folder...
+        print('DirectoryNavigationClass._CellHeld(table={}, cell={})\nself._fileHeldCallback={}'.format(table, cell, self._fileHeldCallback))
+        value = cell.get_value()
+        path = self._currentDirectory + value
+        #path might be a filepath or directory
+        if callable(self._fileHeldCallback):
+            self._fileHeldCallback(self, path)
 
     def GetDir(self):
         return self._currentDirectory
@@ -5003,9 +5328,55 @@ class DirectoryNavigationClass:
         #func should be a function that accetps this dir nav object itself and the selected value
         self._fileSelectedCallback = func
 
+    @property
+    def FileHeld(self):
+        return self._fileHeldCallback
+
+    @FileHeld.setter
+    def FileHeld(self, func):
+        #func should be a function that accetps this dir nav object itself and the selected value
+         self._fileHeldCallback = func
+
     def UpdateMessage(self, msg):
         if self._lblMessage is not None:
             self._lblMessage.SetText(msg)
+
+
+    def AllowChangeDirectory(self, state):
+        self._allowChangeDirectory = state
+        self._UpdateTable()
+
+    def GetAllowChangeDirectory(self):
+        return self._allowChangeDirectory
+
+    def AllowMakeNewFile(self, state=None):
+        if state == None:
+            return self._allowMakeNewFile
+        else:
+            self._allowMakeNewFile = state
+            self._UpdateTable()
+
+    def AllowMakeNewFolder(self, state=None):
+        if state == None:
+            return self._allowMakeNewFolder
+        else:
+            self._allowMakeNewFolder = state
+            self._UpdateTable()
+
+    def AllowDelete(self, state=None):
+        if state == None:
+            return self._allowDelete
+        else:
+            self._allowDelete = state
+            self._UpdateTable()
+
+    def ShowCurrentDirectory(self, state=None):
+        if state == None:
+            return self._showCurrentDirectory
+        else:
+            self._showCurrentDirectory = state
+            self._UpdateTable()
+
 
 def SortListDictByKey(aList, sortKey, reverse=False):
     '''
@@ -5032,11 +5403,13 @@ def SortListDictByKey(aList, sortKey, reverse=False):
     return sorted(aList, key=lambda d: str(d[sortKey]), reverse=reverse)
 
 
-def SortListOfDictsByKeys(aList, sortKeys=[], reverse=False):
+def SortListOfDictsByKeys(aList, sortKeys=None, reverse=False):
+    print('SortListOfDictsByKeys(aList={}, sortKeys={}, reverse={})'.format(aList, sortKeys, reverse))
     '''
     aList = list of dicts
     sortKeys = list of keys to sort by
     reverse = bool to sort a-z(True) or z-a(False)
+    returns a new list of dicts
 
     Example:
     #a list filled with dicts that are not in any particular order
@@ -5070,6 +5443,11 @@ def SortListOfDictsByKeys(aList, sortKeys=[], reverse=False):
     Notice the dicts are organized by valueA, when valueA is the same, then they are sorted by valueC
 
     '''
+    if len(aList) == 0:
+        return aList
+
+    if sortKeys is None:
+        sortKeys = []
 
     missingKeys = []
     for d in aList:
@@ -5125,7 +5503,7 @@ def SortListOfDictsByKeys(aList, sortKeys=[], reverse=False):
         #l = list of dicts
         #subD = dict
         #returns a list of dicts from within l that contain subD
-        #print('getDictWith l={}, subD={}'.format(l2, subD))
+        #print('getDictWith l={}, subD={}'.format(listB, subD))
         result = []
 
         for d in l2:

@@ -42,7 +42,7 @@ print('Begin GST')
 
 # extronlib.ui *****************************************************************
 class Button(extronlib.ui.Button):
-    AllButtons = set()  # This will hold every instance of all buttons
+    _allGSTButtons = set()  # This will hold every instance of all buttons
 
     EventNames = [
         'Pressed',
@@ -53,7 +53,7 @@ class Button(extronlib.ui.Button):
     ]
 
     def __new__(cls, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
-        for btn in cls.All_Buttons:
+        for btn in cls._allGSTButtons:
             if btn.ID == ID and btn.Host == Host:
                 print('This button has been created before. Returning old Button object.')
                 return btn
@@ -88,7 +88,7 @@ class Button(extronlib.ui.Button):
         self.SetVisible(True)
         self.ToggleStateList = None
 
-        self.AllButtons.add(self)
+        self._allGSTButtons.add(self)
 
         #
         self._autostate_callbacks = {
@@ -101,9 +101,9 @@ class Button(extronlib.ui.Button):
         for event_name in self._autostate_callbacks.keys():
             setattr(self, event_name, self._DoEvent)
 
-        self._CreateMissingButton(Host, ID)
+        self._CreateMissingButton(Host, ID, holdTime=holdTime, repeatTime=repeatTime, PressFeedback=PressFeedback)
 
-    def _CreateMissingButton(self, Host, ID):
+    def _CreateMissingButton(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
         print('UIDevice._allUIDevices=', UIDevice._allUIDevices)
         allHost = UIDevice._allUIDevices.copy()
         allHost.remove(self.Host)
@@ -112,14 +112,14 @@ class Button(extronlib.ui.Button):
 
         for otherHost in otherHosts:
             thisHostAlreadyHasButton = False
-            for btn in self.All_Buttons:
+            for btn in self._allGSTButtons:
                 if btn.ID == ID and btn.Host == otherHost:
                     thisHostAlreadyHasButton = True
                     break
 
             if not thisHostAlreadyHasButton:
                 print('Creating duplicate button on otherHost={}, ID={}'.format(otherHost, ID))
-                Button(otherHost, ID)
+                Button(otherHost, ID, holdTime=holdTime, repeatTime=repeatTime, PressFeedback=PressFeedback)
 
     def _DoMirrorMethod(self, methodName, *args, **kwargs):
         # This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
@@ -353,6 +353,17 @@ class Knob(extronlib.ui.Knob):
 
 
 class Label(extronlib.ui.Label):
+    _allLabels = set()
+
+    def __new__(cls, Host, ID):
+        for lbl in cls._allLabels:
+            if lbl.ID == ID and lbl.Host == Host:
+                print('This Label has been created before. Returning old Label object.')
+                return lbl
+
+        print('This Level has never been created before, instantiate for the first time')
+        return super().__new__(cls)
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.Text = ''
@@ -394,6 +405,88 @@ class Label(extronlib.ui.Label):
 
 
 class Level(extronlib.ui.Level):
+    _allLevels = set()  # This will hold every instance of all buttons
+
+
+    def __new__(cls, Host, ID):
+        for lvl in cls._allLevels:
+            if lvl.ID == ID and lvl.Host == Host:
+                print('This Level has been created before. Returning old Button object.')
+                return lvl
+
+        print('This Level has never been created before, instantiate for the first time')
+        return super().__new__(cls)
+
+    def __init__(self, Host, ID):
+        super().__init__(Host, ID)
+        self._allLevels.add(self)
+        self._CreateMissingLevel(Host, ID)
+
+    def _CreateMissingLevel(self, Host, ID):
+        print('UIDevice._allUIDevices=', UIDevice._allUIDevices)
+        allHost = UIDevice._allUIDevices.copy()
+        allHost.remove(self.Host)
+        otherHosts = allHost
+        print('otherHosts=', otherHosts)
+
+        for otherHost in otherHosts:
+            thisHostAlreadyHasButton = False
+            for lvl in self._allLevels:
+                if lvl.ID == ID and lvl.Host == otherHost:
+                    thisHostAlreadyHasButton = True
+                    break
+
+            if not thisHostAlreadyHasButton:
+                print('Creating duplicate Level on otherHost={}, ID={}'.format(otherHost, ID))
+                Level(otherHost, ID)
+
+    def _DoMirrorMethod(self, methodName, *args, **kwargs):
+        # This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
+        # #Find all the slave objects and do same method on them with same args
+        print('gs_tools.Level._DoMirrorMethod(methodName={}, *args={}, **kwargs={})'.format(methodName, args, kwargs))
+        masterTLP = self.Host
+        print('masterTLP=', masterTLP)
+        slaveTLPs = self.Host.MirrorSlaves
+        print('slaveTLPs=', slaveTLPs)
+        allTLPs = [masterTLP] + slaveTLPs
+
+        slaveLevels = UIDevice.GetAllLevels(self.ID, slaveTLPs)
+        print('slaveLevels=', slaveLevels)
+        for lvl in slaveLevels:
+            slaveMethod = getattr(lvl, methodName)
+            print('slaveMethod=', slaveMethod)
+            slaveMethod(*args, **kwargs) #slave levels will detect they are in slave mode and will simply do a normal SetText...
+
+    def Dec(self, *args, **kwargs):
+        print('gs_tools.Level.Dec(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('Dec', *args, **kwargs)
+        super().Dec(*args, **kwargs)
+
+    def Inc(self, *args, **kwargs):
+        print('gs_tools.Level.Inc(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('Inc', *args, **kwargs)
+        super().Inc(*args, **kwargs)
+
+    def SetLevel(self, *args, **kwargs):
+        print('gs_tools.Level.SetLevel(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetLevel', *args, **kwargs)
+        super().SetLevel(*args, **kwargs)
+
+    def SetRange(self, *args, **kwargs):
+        print('gs_tools.Level.SetRange(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetRange', *args, **kwargs)
+        super().SetRange(*args, **kwargs)
+
+    def SetVisible(self, *args, **kwargs):
+        print('gs_tools.Level.SetVisible(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetVisible', *args, **kwargs)
+        super().SetVisible(*args, **kwargs)
+
     def __str__(self):
         return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
@@ -1283,6 +1376,26 @@ class UIDevice(extronlib.device.UIDevice):
 
     @classmethod
     def GetAllButtons(cls, ID=None, host=None):
+        print('GetAllButtons(ID={}, host={})'.format(ID, host))
+        return cls.GetAllObjects(ID, host, type='Button')
+
+    @classmethod
+    def GetAllLevels(cls, ID=None, host=None):
+        print('GetAllLevels(ID={}, host={})'.format(ID, host))
+        return cls.GetAllObjects(ID, host, type='Level')
+
+    @classmethod
+    def GetAllLabels(cls, ID=None, host=None):
+        print('GetAllLabels(ID={}, host={})'.format(ID, host))
+        return cls.GetAllObjects(ID, host, type='Label')
+
+    @classmethod
+    def GetAllKnobs(cls, ID=None, host=None):
+        print('GetAllKnobs(ID={}, host={})'.format(ID, host))
+        return cls.GetAllObjects(ID, host, type='Knob')
+
+    @classmethod
+    def GetAllObjects(cls, ID=None, host=None, type=None):
         '''
         Returns button objects with this ID.
         This will return any button object that has been instantiated from any UIDevice host.
@@ -1290,48 +1403,58 @@ class UIDevice(extronlib.device.UIDevice):
         :param host: list - host to include (None or [] means all host)
         :return: Button object
         '''
-        print('GetAllButtons(ID={}, host={})'.format(ID, host))
-        rtnButtons = []
+        print('GetAllObjects(ID={}, host={}, type={})'.format(ID, host, type))
+        if type == 'Button':
+            allObjects = Button._allGSTButtons
+        elif type == 'Level':
+            allObjects = Level._allLevels
+        elif type == 'Label':
+            allObjects = Label._allLables
+        elif type == 'Knob':
+            allObjects = Knob._allKnobs
+
+        print('allObjects=', allObjects)
+
+        rtnObjects = []
 
         if host is not None:
             if not isinstance(host, list):
                 host = [host]
                 print('host changed to', host)
 
-
         if ID is None:
             if host is None or len(host) == 0:
-                #If ID and host are None, return all buttons for all UIDevices
-                return Button.All_Buttons
+                # If ID and host are None, return all objecs
+                return allObjects
             else:
                 # If ID is None, but host is not None, return all buttons that are for included host
-                for btn in Button.All_Buttons:
-                    if btn.Host in host:
-                        rtnButtons.append(btn)
+                for obj in allObjects:
+                    if obj.Host in host:
+                        rtnObjects.append(obj)
         else:
             if host is None or len(host) == 0:
                 # If ID is not None, but host is None, return all buttons with ID for all UIDevices
-                for btn in Button.All_Buttons:
-                    if btn.ID == ID:
-                        rtnButtons.append(btn)
+                for obj in allObjects:
+                    if obj.ID == ID:
+                        rtnObjects.append(obj)
             else:
                 #print('If ID is not None and host is not None, return all buttons with given ID and included host')
-                for btn in Button.All_Buttons:
-                    #print('btn=', btn)
-                    if btn.ID == ID:
+                for obj in allObjects:
+                    #print('btn=', obj)
+                    if obj.ID == ID:
                         #print('btn.ID == ID')
-                        if btn.Host in host:
+                        if obj.Host in host:
                             #print('btn.Host in host')
-                            rtnButtons.append(btn)
+                            rtnObjects.append(obj)
 
-        #print('rtnButtons=', rtnButtons)
-        return rtnButtons
+        print('rtnObjects=', rtnObjects)
+        return rtnObjects
 
     def SetExclusiveModals(self, modals):
         self._exclusive_modals = modals
 
     def SetVisible(self, id, state):
-        for btn in Button.AllButtons:
+        for btn in Button._allGSTButtons:
             if btn.ID == id:
                 if btn.Host == self:
                     btn.SetVisible(state)

@@ -361,17 +361,42 @@ class Label(extronlib.ui.Label):
                 print('This Label has been created before. Returning old Label object.')
                 return lbl
 
-        print('This Level has never been created before, instantiate for the first time')
+        print('This Label has never been created before, instantiate for the first time')
         return super().__new__(cls)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, Host, ID):
+        super().__init__(Host, ID)
         self.Text = ''
+        self._allLabels.add(self)
+        self._CreateMissingLabel(Host, ID)
+
         self.SetVisible(True)
+
+    def _CreateMissingLabel(self, Host, ID):
+        allHost = UIDevice._allUIDevices.copy()
+        allHost.remove(self.Host)
+        otherHosts = allHost
+        print('otherHosts=', otherHosts)
+
+        for otherHost in otherHosts:
+            thisHostAlreadyHasButton = False
+            for lbl in self._allLabels:
+                if lbl.ID == ID and lbl.Host == otherHost:
+                    thisHostAlreadyHasButton = True
+                    break
+
+            if not thisHostAlreadyHasButton:
+                print('Creating duplicate Label on otherHost={}, ID={}'.format(otherHost, ID))
+                Label(otherHost, ID)
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
         #justify='Left' means chop off the right side
         #justify='Right' means chop off the left side
+        print('gs_tools.Label.SetText(text={}, limitLen={}, elipses={}, justify={})'.format(text, limitLen, elipses, justify))
+
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetText', text, limitLen=None, elipses=False, justify='Left')
+
         self.Text = text
 
         displayText = text
@@ -399,6 +424,29 @@ class Label(extronlib.ui.Label):
 
     def BackspaceText(self):
         self.SetText(self.Text[:-1])
+
+    def _DoMirrorMethod(self, methodName, *args, **kwargs):
+        # This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
+        # #Find all the slave objects and do same method on them with same args
+        print('gs_tools.Label._DoMirrorMethod(methodName={}, *args={}, **kwargs={})'.format(methodName, args, kwargs))
+        masterTLP = self.Host
+        print('masterTLP=', masterTLP)
+        slaveTLPs = self.Host.MirrorSlaves
+        print('slaveTLPs=', slaveTLPs)
+        allTLPs = [masterTLP] + slaveTLPs
+
+        slaveLabels = UIDevice.GetAllLabels(self.ID, slaveTLPs)
+        print('slaveLabels=', slaveLabels)
+        for lbl in slaveLabels:
+            slaveMethod = getattr(lbl, methodName)
+            print('slaveMethod=', slaveMethod)
+            slaveMethod(*args, **kwargs) #slave labels will detect they are in slave mode and will simply do a normal SetText...
+
+    def SetVisible(self, *args, **kwargs):
+        print('gs_tools.Label.SetVisible(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetVisible', *args, **kwargs)
+        super().SetVisible(*args, **kwargs)
 
     def __str__(self):
         return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
@@ -1409,7 +1457,7 @@ class UIDevice(extronlib.device.UIDevice):
         elif type == 'Level':
             allObjects = Level._allLevels
         elif type == 'Label':
-            allObjects = Label._allLables
+            allObjects = Label._allLabels
         elif type == 'Knob':
             allObjects = Knob._allKnobs
 

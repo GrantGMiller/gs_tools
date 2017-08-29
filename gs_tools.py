@@ -28,10 +28,10 @@ import re
 import random
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 if not debug:
     #Disable print statements
-    #print = lambda *args, **kwargs: None
+    print = lambda *args, **kwargs: None
     pass
 else:
     #print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
@@ -231,7 +231,9 @@ class Button(extronlib.ui.Button):
             button.Host.HidePopup(popup)
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
-        self._DoMirrorMethod('SetText', text)
+
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetText', text, limitLen=limitLen, elipses=elipses, justify=justify)
 
         if not isinstance(text, str):
             text = str(text)
@@ -395,7 +397,7 @@ class Label(extronlib.ui.Label):
         print('gs_tools.Label.SetText(text={}, limitLen={}, elipses={}, justify={})'.format(text, limitLen, elipses, justify))
 
         if self.Host.IsMaster():
-            self._DoMirrorMethod('SetText', text, limitLen=None, elipses=False, justify='Left')
+            self._DoMirrorMethod('SetText', text, limitLen=limitLen, elipses=elipses, justify=justify)
 
         self.Text = text
 
@@ -604,7 +606,7 @@ class Wait(extronlib.system.Wait):
                     oldFunc(*self._userArgs)
 
             except Exception as e:
-                ProgramLog('Wait Exception: {}\nException in function:{}\nargs={}'.format(e, oldFunc, self._userArgs), 'error')
+                ProgramLog('Wait Exception: {}\nException in function:{}\nargs={}\nException.args={}'.format(e, oldFunc, self._userArgs, e.args), 'error')
                 raise e
 
         print('Wait.oldFunc=', oldFunc, 'args=', self._userArgs)
@@ -1362,10 +1364,18 @@ class UIDevice(extronlib.device.UIDevice):
             else:
                 self.PopupData[PopupName] = 'Unknown'
 
+        if self.IsMaster():
+            for slave in self._mirrorSlaves:
+                slave.HidePopup(popup)
+
     def HideAllPopups(self):
         super().HideAllPopups()
         for PopupName in self.PopupData:
             self.PopupData[PopupName] = 'Hidden'
+
+        if self.IsMaster():
+            for slave in self._mirrorSlaves:
+                slave.HideAllPopups()
 
     def ShowPage(self, page):
         print('gs_tools.UIDevice.ShowPage(page={}) self.DeviceAlias={}'.format(page, self.DeviceAlias))
@@ -2401,7 +2411,7 @@ class Keyboard():
 
         self.TextFields = {}  # Format: {FeedbackObject : 'Text'}, this keeps track of the text on various Label objects.
 
-        self.bDelete = extronlib.ui.Button(TLP, BackspaceID, holdTime=0.2, repeatTime=0.1)
+        self.bDelete =Button(TLP, BackspaceID, holdTime=0.2, repeatTime=0.1)
 
         self.string = ''
 
@@ -2411,7 +2421,7 @@ class Keyboard():
 
         # Clear Key
         if ClearID is not None:
-            self.bClear = extronlib.ui.Button(TLP, ClearID)
+            self.bClear = Button(TLP, ClearID)
 
             @event(self.bClear, 'Pressed')
             def clearPressed(button, state):
@@ -2437,7 +2447,7 @@ class Keyboard():
                 # Spacebar
 
         if SpaceBarID is not None:
-            @event(extronlib.ui.Button(TLP, SpaceBarID), 'Pressed')
+            @event(Button(TLP, SpaceBarID), 'Pressed')
             def SpacePressed(button, state):
                 # print(button.Name, state)
                 self.AppendToString(' ')
@@ -2472,14 +2482,14 @@ class Keyboard():
                 # print('After self.ShiftMode=', self.ShiftMode)
 
         for ID in KeyIDs:
-            NewButton = extronlib.ui.Button(TLP, ID)
+            NewButton = Button(TLP, ID)
             NewButton.Pressed = CharacterPressed
             NewButton.Released = CharacterPressed
             self.KeyButtons.append(NewButton)
 
         # Shift Key
         if ShiftID is not None:
-            self.ShiftKey = extronlib.ui.Button(TLP, ShiftID, holdTime=1)
+            self.ShiftKey = Button(TLP, ShiftID, holdTime=1)
 
             @event(self.ShiftKey, 'Pressed')
             @event(self.ShiftKey, 'Tapped')

@@ -28,17 +28,13 @@ import re
 import random
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     #Disable print statements
-    print = lambda *args, **kwargs: None
+    #print = lambda *args, **kwargs: None
+    pass
 else:
     #print = lambda *args, **kwargs: ProgramLog(' '.join(str(arg) for arg in args), 'info')
-    oldPrint = print
-    def newPrint(*args, **kwargs):
-        time.sleep(0.0001)
-        oldPrint(*args, **kwargs)
-    print = newPrint
     pass
 
 print('Begin GST')
@@ -46,7 +42,7 @@ print('Begin GST')
 
 # extronlib.ui *****************************************************************
 class Button(extronlib.ui.Button):
-    AllButtons = []  # This will hold every instance of all buttons
+    AllButtons = set()  # This will hold every instance of all buttons
 
     EventNames = [
         'Pressed',
@@ -55,6 +51,16 @@ class Button(extronlib.ui.Button):
         'Repeated',
         'Released',
     ]
+
+    def __new__(cls, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
+        for btn in cls.All_Buttons:
+            if btn.ID == ID and btn.Host == Host:
+                print('This button has been created before. Returning old Button object.')
+                return btn
+
+        print('This button has never been created before, instantiate for the first time')
+        return super().__new__(cls)
+
 
     def __init__(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
         '''
@@ -65,6 +71,7 @@ class Button(extronlib.ui.Button):
         :param repeatTime: float()
         :param PressFeedback: If you want the button to change states when you press/release, set this to 'State'
         '''
+        print('gs_tools.Button.__init__(Host={}, ID={})'.format(Host, ID))
         extronlib.ui.Button.__init__(self, Host, ID, holdTime=holdTime, repeatTime=repeatTime)
 
         self.StateChangeMap = {}  # ex. {'Pressed': 1, 'Released': 0}
@@ -81,7 +88,7 @@ class Button(extronlib.ui.Button):
         self.SetVisible(True)
         self.ToggleStateList = None
 
-        self.AllButtons.append(self)
+        self.AllButtons.add(self)
 
         #
         self._autostate_callbacks = {
@@ -94,11 +101,82 @@ class Button(extronlib.ui.Button):
         for event_name in self._autostate_callbacks.keys():
             setattr(self, event_name, self._DoEvent)
 
-    def _DoEvent(self, button, state):
-        self._DoStateChange(state)
+        self._CreateMissingButton(Host, ID)
 
-        if self._autostate_callbacks[state] is not None:
-            self._autostate_callbacks[state](button, state)
+    def _CreateMissingButton(self, Host, ID):
+        print('UIDevice._allUIDevices=', UIDevice._allUIDevices)
+        allHost = UIDevice._allUIDevices.copy()
+        allHost.remove(self.Host)
+        otherHosts = allHost
+        print('otherHosts=', otherHosts)
+
+        for otherHost in otherHosts:
+            thisHostAlreadyHasButton = False
+            for btn in self.All_Buttons:
+                if btn.ID == ID and btn.Host == otherHost:
+                    thisHostAlreadyHasButton = True
+                    break
+
+            if not thisHostAlreadyHasButton:
+                print('Creating duplicate button on otherHost={}, ID={}'.format(otherHost, ID))
+                Button(otherHost, ID)
+
+    def _DoMirrorMethod(self, methodName, *args, **kwargs):
+        # This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
+        # #Find all the slave objects and do same method on them with same args
+        print('Button._DoMirrorMethod(methodName={}, *args={}, **kwargs={})'.format(methodName, args, kwargs))
+        masterTLP = self.Host
+        print('masterTLP=', masterTLP)
+        slaveTLPs = self.Host.MirrorSlaves
+        print('slaveTLPs=', slaveTLPs)
+        allTLPs = [masterTLP] + slaveTLPs
+
+        slaveButtons = UIDevice.GetAllButtons(self.ID, slaveTLPs)
+        print('slaveButtons=', slaveButtons)
+        for btn in slaveButtons:
+            slaveMethod = getattr(btn, methodName)
+            print('slaveMethod=', slaveMethod)
+            slaveMethod(*args, **kwargs) #slave buttons will detect they are in slave mode and will simply do a normal SetText...
+
+    def _DoMirrorEvent(self, eventName):
+        # if self.Host is a slave, then call the master event
+        # if self.Host is a master, do nothing. _DoEvent will process as normal
+        print('Button._DoMirrorEvent(eventName={})'.format(eventName))
+        print('self.Host.MirrorMaster=', self.Host.MirrorMaster)
+        print('111 self.Host=', self.Host)
+        if self.Host.MirrorMaster is not None:
+            #We are in a mirror mode, might be slave, might be master
+            if self.Host.MirrorMaster is not self.Host:
+                # self.Host is a slave button
+                # find the master button and call its event instead
+                masterTLP = self.Host.MirrorMaster
+                print('masterTLP=', masterTLP)
+                print('self.ID=', self.ID)
+                masterButton = UIDevice.GetAllButtons(ID=self.ID, host=masterTLP)[0]
+                print('masterButton=', masterButton)
+                masterEvent = getattr(masterButton, eventName)
+                print('masterEvent=', masterEvent)
+                masterEvent(masterButton, eventName)
+            else:
+                # self.Host is master, do nothing, _DoEvent will process normally
+                pass
+        pass
+
+    def _DoEvent(self, button, state):
+        #This method gets called every time a button is pressed/released
+        #It first calls the internal method to change state, then calls the users method
+        print('Button._DoEvent(self, state={}) self.Host={}, self.ID={}, '.format(state, self.Host, self.ID ))
+
+        print('self.Host.IsSlave()=', self.Host.IsSlave())
+        print('self=', self)
+        print('self.SetState=', self.SetState)
+        if self.Host.IsSlave():
+            self._DoMirrorEvent(state) #This will call the master event instead
+        else:
+            # self is the master button,
+            self._DoStateChange(state)
+            if self._autostate_callbacks[state] is not None:
+                self._autostate_callbacks[state](button, state)
 
     def RemoveStateChange(self):
         '''
@@ -121,10 +199,12 @@ class Button(extronlib.ui.Button):
             setattr(self, eventName, lambda *args: None)
 
     def _DoStateChange(self, state):
-        # print(self.ID, '_DoStateChange')
+        print('Button._DoStateChange(state={}) self={}'.format(state, self))
+        print('state in self.StateChangeMap =', state in self.StateChangeMap)
         if state in self.StateChangeMap:
             # print(self.ID, 'state in self.StateChangeMap')
             NewState = self.StateChangeMap[state]
+            print('NewState=', NewState)
             self.SetState(NewState)
 
     def ShowPopup(self, popup, duration=0):
@@ -151,6 +231,8 @@ class Button(extronlib.ui.Button):
             button.Host.HidePopup(popup)
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
+        self._DoMirrorMethod('SetText', text)
+
         if not isinstance(text, str):
             text = str(text)
 
@@ -231,13 +313,43 @@ class Button(extronlib.ui.Button):
         else:
             self.ToggleStateList = None
 
+    def SetBlinking(self, *args, **kwargs):
+        print('gs_tools.Button.SetBlinking(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetBlinking', *args, **kwargs)
+        super().SetBlinking(*args, **kwargs)
+
+    def CustomBlink(self, *args, **kwargs):
+        print('gs_tools.Button.CustomBlink(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('CustomBlink', *args, **kwargs)
+        super().CustomBlink(*args, **kwargs)
+
+    def SetEnable(self, *args, **kwargs):
+        print('gs_tools.Button.SetEnable(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetEnable', *args, **kwargs)
+        super().SetEnable(*args, **kwargs)
+
+    def SetState(self, *args, **kwargs):
+        print('gs_tools.Button.SetState(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetState', *args, **kwargs)
+        super().SetState(*args, **kwargs)
+
+    def SetVisible(self, *args, **kwargs):
+        print('gs_tools.Button.SetVisible(args={}, kwargs={}) self={}'.format(args, kwargs, self))
+        if self.Host.IsMaster():
+            self._DoMirrorMethod('SetVisible', *args, **kwargs)
+        super().SetVisible(*args, **kwargs)
+
     def __str__(self):
-        return '{}, 229Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
+        return '<{}, Host.DeviceAlias={}, ID={}>'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Knob(extronlib.ui.Knob):
     def __str__(self):
-        return '{}, Host.DeviceAlias={}, ID={}'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
+        return '<{}, Host.DeviceAlias={}, ID={}>'.format(super().__str__(), self.Host.DeviceAlias, self.ID)
 
 
 class Label(extronlib.ui.Label):
@@ -1031,10 +1143,16 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
         except:
             return super().__str__()
 
+#Mirror *****************************************************************************
+'''
+Theory: A dict() will keep track of which UIDevices are mirrored and which is the master/slave.
+All Button/Label/Level/Knobs will check this dict and either execute their native event or mirrored event.
+'''
+mirrorDict = {} #This dict will keep track of which UIDevices are mirrored
 
 class UIDevice(extronlib.device.UIDevice):
 
-    _allUIDevices = []
+    _allUIDevices = set()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1056,8 +1174,11 @@ class UIDevice(extronlib.device.UIDevice):
         self._PageHistory = []  # hold last X pages
         self._PageOffset = 0  # 0 = last entry in
 
+        self._mirrorMaster = None # Points to the master TLP, might be self, or None if not in mirror mode
+        self._mirrorSlaves = [] #list of UIDevice objects (does not include self)
+
         if self not in self._allUIDevices:
-            self._allUIDevices.append(self)
+            self._allUIDevices.add(self)
 
     def ShowPopup(self, popup, duration=0):
         #print('ShowPopup popup={}, duration={}'.format(popup, duration))
@@ -1067,6 +1188,10 @@ class UIDevice(extronlib.device.UIDevice):
             for modal_name in self._exclusive_modals:
                 if modal_name != popup:
                     self.HidePopup(modal_name)
+
+        if self.IsMaster():
+            for slave in self._mirrorSlaves:
+                slave.ShowPopup(popup, duration)
 
     def _DoShowPopup(self, popup, duration=0):
         super().ShowPopup(popup, duration)
@@ -1102,6 +1227,7 @@ class UIDevice(extronlib.device.UIDevice):
             self.PopupData[PopupName] = 'Hidden'
 
     def ShowPage(self, page):
+        print('gs_tools.UIDevice.ShowPage(page={}) self.DeviceAlias={}'.format(page, self.DeviceAlias))
         super().ShowPage(page)
 
         for PageName in self.PageData:
@@ -1112,6 +1238,10 @@ class UIDevice(extronlib.device.UIDevice):
 
         if page not in self._PageHistory:
             self._PageHistory.append(page)
+
+        if self.IsMaster():
+            for slave in self._mirrorSlaves:
+                slave.ShowPage(page)
 
     def PageBack(self):
         # TODO
@@ -1151,25 +1281,51 @@ class UIDevice(extronlib.device.UIDevice):
         else:
             print('GST Line 207 "else"')
 
-    def GetAllButtons(self, ID=None):
+    @classmethod
+    def GetAllButtons(cls, ID=None, host=None):
         '''
         Returns button objects with this ID.
         This will return any button object that has been instantiated from any UIDevice host.
         :param ID: int
+        :param host: list - host to include (None or [] means all host)
         :return: Button object
         '''
+        print('GetAllButtons(ID={}, host={})'.format(ID, host))
+        rtnButtons = []
 
-        ReturnBtns = []
+        if host is not None:
+            if not isinstance(host, list):
+                host = [host]
+                print('host changed to', host)
 
-        for button in Button.AllButtons:
-            if button.Host == self:
-                if ID == None:
-                    ReturnBtns.append(button)
-                else:
-                    if button.ID == ID:
-                        ReturnBtns.append(button)
 
-        return ReturnBtns
+        if ID is None:
+            if host is None or len(host) == 0:
+                #If ID and host are None, return all buttons for all UIDevices
+                return Button.All_Buttons
+            else:
+                # If ID is None, but host is not None, return all buttons that are for included host
+                for btn in Button.All_Buttons:
+                    if btn.Host in host:
+                        rtnButtons.append(btn)
+        else:
+            if host is None or len(host) == 0:
+                # If ID is not None, but host is None, return all buttons with ID for all UIDevices
+                for btn in Button.All_Buttons:
+                    if btn.ID == ID:
+                        rtnButtons.append(btn)
+            else:
+                #print('If ID is not None and host is not None, return all buttons with given ID and included host')
+                for btn in Button.All_Buttons:
+                    #print('btn=', btn)
+                    if btn.ID == ID:
+                        #print('btn.ID == ID')
+                        if btn.Host in host:
+                            #print('btn.Host in host')
+                            rtnButtons.append(btn)
+
+        #print('rtnButtons=', rtnButtons)
+        return rtnButtons
 
     def SetExclusiveModals(self, modals):
         self._exclusive_modals = modals
@@ -1184,11 +1340,85 @@ class UIDevice(extronlib.device.UIDevice):
         return '<gs_tools.UIDevice object DeviceAlias={}, IPAddress={}>'.format(self.DeviceAlias, self.IPAddress)
 
     #def __repr__(self):
+        #Leave this alone. Seems like extronlib is sensitive to changes to repr
         #return str(self)
 
     #def __setattr__(self, *args, **kwargs):
+        #Enable this to see all setattr calls
         #print('UIDevice.__setattr__:', args, kwargs)
         #super().__setattr__(*args, **kwargs)
+
+
+    #Methods for Mirroring UIDevices **********************************************
+    def AttachSlave(self, *slaveTLPs):
+        #This will attach slave TLPs to self (self is the master)
+        print('UIDevice.AttachSlave(*slaveTLPs={})'.format(slaveTLPs))
+        if self._mirrorMaster is None:
+            self._mirrorMaster = self
+            for slave in slaveTLPs:
+                slave._MakeSlave(self)
+                self._mirrorSlaves.append(slave)
+        else:
+            raise Exception('Error: UIDevice with alias "{}" is already a slave of UIDevice with alias "{}"'.format(self.DeviceAlias, self._mirrorMaster.DeviceAlias))
+        print('self={}, self._mirrorMaster={}'.format(self, self._mirrorMaster))
+        print('self={}, self._mirrorSlaves={}'.format(self, self._mirrorSlaves))
+
+    @property
+    def MirrorMaster(self):
+        # return UIDevice that is master (might be self), or None if not in mirror mode
+        return self._mirrorMaster
+
+    def IsSlave(self):
+        #alias of self.MirrorMaster
+        if self._mirrorMaster is not None:
+            if self._mirrorMaster is self:
+                return False
+            elif self._mirrorMaster is not self:
+                return True
+        else:
+            return False
+
+    def IsMaster(self):
+        # alias of self.MirrorMaster
+        if self._mirrorMaster is not None:
+            if self._mirrorMaster is self:
+                return True
+            elif self._mirrorMaster is not self:
+                return False
+        else:
+            return False
+
+    @property
+    def MirrorSlaves(self):
+        # return list of slave UIDevices
+        return self._mirrorSlaves
+
+    def ReleaseSlave(self, *slaveTLPs):
+        # Releases slaves listed, they will return to native mode
+        # If all slaves are released, self returns to native mode also
+        print('UIDevice.ReleaseSlave(*slaveTLPs={})'.format(slaveTLPs))
+        for slave in slaveTLPs:
+            self._mirrorSlaves.pop(slave)
+            slave._RemoveMaster()
+
+        if len(self._mirrorSlaves) == 0:
+            #all slaves have been removed, return to non-mirrored mode
+            self._RemoveMaster()
+
+    #These methods are called by another UIDevice to enable/disable slave settings
+    def _MakeSlave(self, masterTLP):
+        print('self={}, UIDevice._MakeSlave(*masterTLP={})'.format(self, masterTLP))
+        if self._mirrorMaster is None:
+            self._mirrorMaster = masterTLP
+            self._mirrorSlaves = []
+        else:
+            raise Exception('UIDevice with alias "{}" is already a slave to UIDevice with alias "{}"'.format(self.DeviceAlias, self._mirrorMaster.DeviceAlias))
+
+    def _RemoveMaster(self):
+        print('UIDevice._MakeSlave()')
+        # takes tlp out of mirror mode. works independently again
+        self._mirrorMaster = None
+        self._mirrorSlaves = []
 
 # extronlib *********************************************************************
 
@@ -5749,6 +5979,9 @@ def IsInterfaceAvailable(proc=None, ignoreKwargs=None, newKwargs=None):
         return True
     else:
         return errors
+
+
+
 
 print('End  GST')
 

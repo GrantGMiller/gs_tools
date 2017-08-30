@@ -1,6 +1,7 @@
 '''
 This module is meant to be a collection of tools to simplify common task in AV control systems.
 Started: March 28, 2017 and appended to continuously
+Latest Update: 2017-08-30 - Added TLP Mirroring capabilities (see UIDevice.AttachSlave())
 '''
 
 
@@ -12,7 +13,7 @@ from extronlib.system import Wait, ProgramLog, File, Ping, RFile, Clock
 from extronlib.ui import Button, Level
 
 try:
-    import aes_tools
+    import aes_tools # Used for encrypting data.
 except:
     pass
 
@@ -42,7 +43,15 @@ print('Begin GST')
 
 # extronlib.ui *****************************************************************
 class Button(extronlib.ui.Button):
-    _allGSTButtons = set()  # This will hold every instance of all buttons
+    _allButtonsDict = {
+        #UIDeviceObject: { 01: ButtonObject,...}
+    }
+
+    @classmethod
+    def AddButtonInfo(cls, btn):
+        if btn.Host not in cls._allButtonsDict:
+            cls._allButtonsDict[btn.Host] = {}
+        cls._allButtonsDict[btn.Host][btn.ID] = btn
 
     EventNames = [
         'Pressed',
@@ -53,10 +62,24 @@ class Button(extronlib.ui.Button):
     ]
 
     def __new__(cls, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
-        for btn in cls._allGSTButtons:
-            if btn.ID == ID and btn.Host == Host:
-                print('This button has been created before. Returning old Button object.')
-                return btn
+        '''
+        This will create a new button object if this Host/ID combo has never been instantiated.
+        If this Host/ID combo has been instantiated before, it will return the previously instantiated object.
+        This is to prevent multiple object created for the same physical Button on a TLP.
+        Previously, it was possible to have multiple Button objects that represented the same physical button.
+            This resulted in two objects that were not aware of each other when they interacted with the physical button.
+
+        :param Host: gs_tools.UIDevice
+        :param ID: int
+        :param holdTime: float
+        :param repeatTime: float
+        :param PressFeedback: str 'State' or None
+        :return:
+        '''
+        btn = cls._allButtonsDict.get(Host, {}).get(ID, None)
+        if btn is not None:
+            print('This button has been created before. Returning old Button object.')
+            return btn
 
         print('This button has never been created before, instantiate for the first time')
         return super().__new__(cls)
@@ -69,15 +92,17 @@ class Button(extronlib.ui.Button):
         :param ID: int()
         :param holdTime: float()
         :param repeatTime: float()
-        :param PressFeedback: If you want the button to change states when you press/release, set this to 'State'
+        :param PressFeedback: str 'State' or None: If you want the button to change states when you press/release, set this to 'State'
         '''
         print('gs_tools.Button.__init__(Host={}, ID={})'.format(Host, ID))
         extronlib.ui.Button.__init__(self, Host, ID, holdTime=holdTime, repeatTime=repeatTime)
 
-        self.StateChangeMap = {}  # ex. {'Pressed': 1, 'Released': 0}
+        self.StateChangeMap = { #Keeps track of what state to change the button to upon events
+            #'Pressed': 1, 'Released': 0,
+            }
 
         for EventName in self.EventNames:
-            setattr(self, 'Last' + EventName, None)
+            setattr(self, 'Last' + EventName, None) #Keep track of the last known event so we can detect if a user re-assigns an event.
 
         if PressFeedback == 'State':
             self.AutoStateChange('Pressed', 1)
@@ -88,10 +113,9 @@ class Button(extronlib.ui.Button):
         self.SetVisible(True)
         self.ToggleStateList = None
 
-        self._allGSTButtons.add(self)
+        self.AddButtonInfo(self) #Keep
 
-        #
-        self._autostate_callbacks = {
+        self._autostate_callbacks = { #holds the user-functions to call when buttons are pressed
             'Pressed': None,
             'Tapped': None,
             'Held': None,
@@ -104,6 +128,18 @@ class Button(extronlib.ui.Button):
         self._CreateMissingButton(Host, ID, holdTime=holdTime, repeatTime=repeatTime, PressFeedback=PressFeedback)
 
     def _CreateMissingButton(self, Host, ID, holdTime=None, repeatTime=None, PressFeedback=None):
+        '''
+        Checks all other Host to see if this Button ID has been instantiated on that Host.
+        If not, then this method instantiates a new button for this other host.
+        When mirroring, Buttons must be instantiated on both Host.
+
+        :param Host: gs_tools.UIDevice
+        :param ID: int
+        :param holdTime: float
+        :param repeatTime: float
+        :param PressFeedback: str
+        :return:
+        '''
         print('UIDevice._allUIDevices=', UIDevice._allUIDevices)
         allHost = UIDevice._allUIDevices.copy()
         allHost.remove(self.Host)
@@ -112,18 +148,22 @@ class Button(extronlib.ui.Button):
 
         for otherHost in otherHosts:
             thisHostAlreadyHasButton = False
-            for btn in self._allGSTButtons:
-                if btn.ID == ID and btn.Host == otherHost:
-                    thisHostAlreadyHasButton = True
-                    break
+            btn = self._allButtonsDict.get(otherHost, {}).get(ID, None)
+            if btn is not None:
+                thisHostAlreadyHasButton = True
+                break
 
             if not thisHostAlreadyHasButton:
                 print('Creating duplicate button on otherHost={}, ID={}'.format(otherHost, ID))
                 Button(otherHost, ID, holdTime=holdTime, repeatTime=repeatTime, PressFeedback=PressFeedback)
 
     def _DoMirrorMethod(self, methodName, *args, **kwargs):
-        # This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
-        # #Find all the slave objects and do same method on them with same args
+        '''
+        This is called by self when SetText, SetState, etc.. methods are called when self.Host is a mirror master
+        Find all the slave objects and do same method on them with same args.
+        This means that when mirrored, calling SetText on one button, calls it on every slave Button also, thus keeping
+            the UIs in sync.
+        '''
         print('Button._DoMirrorMethod(methodName={}, *args={}, **kwargs={})'.format(methodName, args, kwargs))
         masterTLP = self.Host
         print('masterTLP=', masterTLP)
@@ -139,11 +179,14 @@ class Button(extronlib.ui.Button):
             slaveMethod(*args, **kwargs) #slave buttons will detect they are in slave mode and will simply do a normal SetText...
 
     def _DoMirrorEvent(self, eventName):
-        # if self.Host is a slave, then call the master event
-        # if self.Host is a master, do nothing. _DoEvent will process as normal
+        '''
+        if self.Host is a slave, then call the event from the master UIDevice
+        if self.Host is a master, do nothing. _DoEvent will process as normal
+        :param eventName: str 'Pressed', 'Released', etc
+        '''
         print('Button._DoMirrorEvent(eventName={})'.format(eventName))
         print('self.Host.MirrorMaster=', self.Host.MirrorMaster)
-        print('111 self.Host=', self.Host)
+        print('self.Host=', self.Host)
         if self.Host.MirrorMaster is not None:
             #We are in a mirror mode, might be slave, might be master
             if self.Host.MirrorMaster is not self.Host:
@@ -163,10 +206,12 @@ class Button(extronlib.ui.Button):
         pass
 
     def _DoEvent(self, button, state):
-        #This method gets called every time a button is pressed/released
-        #It first calls the internal method to change state, then calls the users method
+        '''
+        This method gets called every time a button is pressed/released
+        It first calls the internal method to change state, then calls the users method
+        If this Host is a slave, then call the master UIDevice event instead.
+        '''
         print('Button._DoEvent(self, state={}) self.Host={}, self.ID={}, '.format(state, self.Host, self.ID ))
-
         print('self.Host.IsSlave()=', self.Host.IsSlave())
         print('self=', self)
         print('self.SetState=', self.SetState)
@@ -180,7 +225,7 @@ class Button(extronlib.ui.Button):
 
     def RemoveStateChange(self):
         '''
-        This will disable all states changes based on press/release
+        This will disable all states changes based on press/release events
         :return:
         '''
         self.StateChangeMap = {}
@@ -189,8 +234,8 @@ class Button(extronlib.ui.Button):
         '''
         This is used to change the button state based on a certain event.
         This is non-destructive. Your previously defined events will be maintained.
-        :param eventName: ie. 'Pressed', 'Released', etc
-        :param buttonState: The button will change to this state when the event happens.
+        :param eventName: str - 'Pressed', 'Released', etc
+        :param buttonState: int - The button will change to this state when the eventName happens.
         :return:
         '''
         self.StateChangeMap[eventName] = buttonState
@@ -217,6 +262,10 @@ class Button(extronlib.ui.Button):
             button.Host.ShowPopup(popup, duration)
 
     def ShowPage(self, page):
+        '''This method is used to simplify a button that just needs to show a page
+        Example:
+        Button(TLP, 8022).ShowPage('Main')
+        '''
         @event(self, 'Released')
         def NewFunc(button, state):
             button.Host.ShowPage(page)
@@ -231,7 +280,17 @@ class Button(extronlib.ui.Button):
             button.Host.HidePopup(popup)
 
     def SetText(self, text, limitLen=None, elipses=False, justify='Left'):
+        '''
+        Sets the text on a Button.
+        This will also store the text so it can be referended later with self.GetText()
 
+        :param text: text to be displayed
+        :param limitLen: int - if the Button can only accomodate a certain len(text), then put that limit here
+        :param elipses: bool - When the text exceeds the limitLen, True will add '...' to the text.
+            For example: 'long string of chars' becomes '...ng of chars' or 'long stri...' depending on the 'justify' parameter
+        :param justify: str - 'Left' or 'Right'
+        :return:
+        '''
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetText', text, limitLen=limitLen, elipses=elipses, justify=justify)
 
@@ -265,7 +324,7 @@ class Button(extronlib.ui.Button):
         This object will store the last value assigned with .SetText()
         You can retrieve the current text using this method.
         Note: If you call .GetText() without first calling .SetText() this method will return ''
-        :return:
+        :return: str
         '''
         return self.Text
 
@@ -279,6 +338,11 @@ class Button(extronlib.ui.Button):
         self.SetText(self.Text + text)
 
     def BackspaceText(self):
+        '''
+        This method will removed the right-most character from the text.
+        For example: 'This is the Button text' becomes 'This is the Button tex'
+        :return:
+        '''
         self.SetText(self.Text[:-1])
 
     def ToggleVisibility(self):
@@ -316,30 +380,35 @@ class Button(extronlib.ui.Button):
             self.ToggleStateList = None
 
     def SetBlinking(self, *args, **kwargs):
+        #Method override to allow for mirroring
         print('gs_tools.Button.SetBlinking(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetBlinking', *args, **kwargs)
         super().SetBlinking(*args, **kwargs)
 
     def CustomBlink(self, *args, **kwargs):
+        #Method override to allow for mirroring
         print('gs_tools.Button.CustomBlink(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('CustomBlink', *args, **kwargs)
         super().CustomBlink(*args, **kwargs)
 
     def SetEnable(self, *args, **kwargs):
+        #Method override to allow for mirroring
         print('gs_tools.Button.SetEnable(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetEnable', *args, **kwargs)
         super().SetEnable(*args, **kwargs)
 
     def SetState(self, *args, **kwargs):
+        #Method override to allow for mirroring
         print('gs_tools.Button.SetState(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetState', *args, **kwargs)
         super().SetState(*args, **kwargs)
 
     def SetVisible(self, *args, **kwargs):
+        #Method override to allow for mirroring
         print('gs_tools.Button.SetVisible(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetVisible', *args, **kwargs)
@@ -355,7 +424,7 @@ class Knob(extronlib.ui.Knob):
 
 
 class Label(extronlib.ui.Label):
-    _allLabels = set()
+    _allLabels = set() #TODO replace with dict() (see gs_tools.Button implementation)
 
     def __new__(cls, Host, ID):
         for lbl in cls._allLabels:
@@ -559,22 +628,23 @@ class Wait(extronlib.system.Wait):
     for example:
 
     @Wait(2, args=('one', 'two'))
-    def loop(arg1, arg2):
-        print('loop(arg1={}, arg2={})'.format(arg1, arg2))
-        int('hello') #this causes an exception. Notice the full traceback message shows in the ProgramLog and Trace
+    def TestFunc3(arg1, arg2):
+        print('TestFunc3(arg1={}, arg2={})'.format(arg1, arg2))
+        int('TestFunc3 Exception') #this causes an exception. Notice the full traceback message shows in the ProgramLog and Trace
 
     **OR**
 
-    def TestFunc(arg1, arg2):
-        print('TestFunc(arg1={}, arg2={})'.format(arg1, arg2))
-        raise Exception('TestFunc Exception')
+    def TestFunc1(arg1, arg2):
+        print('TestFunc1(arg1={}, arg2={})'.format(arg1, arg2))
+        int('TestFunc1 Exception') #this causes an exception. Notice the full traceback message shows in the ProgramLog and Trace
 
     Wait(3, TestFunc, args=('three', 'four'))
 
     **OR**
+
     def TestFunc2(arg1):
         print('TestFunc(arg1={})'.format(arg1))
-        raise Exception('TestFunc2 Exception')
+        int('TestFunc2 Exception') #this causes an exception. Notice the full traceback message shows in the ProgramLog and Trace
 
     Wait(3, TestFunc2, args=('three',)) #Note the extra comma to create a tuple
 
@@ -606,7 +676,7 @@ class Wait(extronlib.system.Wait):
                     oldFunc(*self._userArgs)
 
             except Exception as e:
-                ProgramLog('Wait Exception: {}\nException in function:{}\nargs={}\nException.args={}'.format(e, oldFunc, self._userArgs, e.args), 'error')
+                ProgramLog('Wait Exception: {}\nException in function:{}\nargs={}'.format(e, oldFunc, self._userArgs), 'error')
                 raise e
 
         print('Wait.oldFunc=', oldFunc, 'args=', self._userArgs)
@@ -623,7 +693,18 @@ class File(extronlib.system.File):
 
     @classmethod
     def ListDirWithSub(cls, dir='/'):
-        #returns a list of str, each item is a file or subdir with the full path
+        '''
+        returns a list of str, each item is a file or subdir with the full path
+
+        For example: [
+            '/file1.txt',
+            '/directory1/', #empty directory
+            '/directory2/file2.txt',
+            '/directory2/subDirectory1/file3.txt',
+            ]
+        :param dir: str
+        :return: list
+        '''
         allFiles = []
         thisListDir = cls.ListDir(dir)
         print('dir={}, thisListDir={}'.format(dir, thisListDir))
@@ -638,6 +719,11 @@ class File(extronlib.system.File):
 
     @classmethod
     def DeleteDirRecursive(cls, dir='/'):
+        '''
+        Use this classmethod to remove a directory and all its contents.
+        :param dir: str
+        :return:
+        '''
         print('File.DeleteDirRecursive(dir={})'.format(dir))
         items = File.ListDir(dir)
         print('dir={}, items='.format(dir), items)
@@ -661,7 +747,7 @@ class File(extronlib.system.File):
 class ContactInterface(extronlib.interface.ContactInterface):
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         yield 'Host.DeviceAlias', self.Host.DeviceAlias
         yield 'Port', self.Port
@@ -671,7 +757,7 @@ class ContactInterface(extronlib.interface.ContactInterface):
 class DigitalIOInterface(extronlib.interface.DigitalIOInterface):
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         yield 'Host.DeviceAlias', self.Host.DeviceAlias
         yield 'Port', self.Port
@@ -708,7 +794,14 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
         yield 'Type', str(type(self))
 
     def StartKeepAlive(self, t, cmd):
-        # super().StartKeepAlive does not call .Send apparently so im doing it differnt
+        '''
+        This method uses the normal .Send() function to send the cmd at regular intervals.
+        super().StartKeepAlive does not call .Send it uses some internal mechanism to send the cmd.
+
+        :param t: float - interval to send cmd
+        :param cmd: str or b''
+        :return:
+        '''
         if self._keep_alive_running is False:
             self._keep_alive_running = True
 
@@ -728,11 +821,27 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
                 self._keep_alive_Timer.Stop()
 
     def Send(self, data):
-        # Send data in chunks.
+        '''
+        This sends the data in chunks.
+        If trying to send chunks larger than X (I think its 4096), this method can fail.
+        This method breaks the data into smaller chunks and sends them at a slower pace.
+        The timing on this method may need to be adjusted for your purposes.
+        This was developed by sending a large file (100MB) to a SMD 202 via IP.
+
+        :param data: str or bytes
+        :return:
+        '''
+        ######
+        #Adjust these to change the timing of the chunky-send
         chunkSize = 256  # 256 seems to work well on an actual IPCP
+        delayBetweenChunks = 0.001
+        #######
+
         numberOfChunks = int(len(data) / chunkSize) + 1
         ##print('NumberOfChunks=', NumberOfChunks)
-        lastPrint = 0
+
+        lastPrint = 0 # used to print out the sending progress percentage since large files can take a long time to send
+
         for i in range(numberOfChunks):
             if numberOfChunks > 1:
                 if i % 1000 == 0:
@@ -752,7 +861,7 @@ class EthernetClientInterface(extronlib.interface.EthernetClientInterface):
             try:
                 self._ChunkSend(Chunk)
                 ##print('Chunk', i, '=', Chunk)
-                time.sleep(0.001)  # 256bytes/0.001seconds = 2.5MB/s max transfer speed = 2.0 Mbps
+                time.sleep(delayBetweenChunks)  # 256bytes/0.001seconds = 2.5MB/s max transfer speed = 2.0 Mbps
                 pass
             except Exception as e:
                 print(e)
@@ -776,18 +885,21 @@ def get_parent(client_obj):
 
 
 class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
-    '''
-    If the programmer tries to instantiate 2 objects with the same port number,
-        a Exception will be thrown.
-    However, if the programmer wishes, they can call EthernetServerInterfaceEx.clear_port_in_use().
-        This will allow the programmer to instantiate the object again, but any event associated with the first object
-        will be overridden by @events on the second object.
-    '''
-    _all_servers_ex = {  # int(port_number): EthernetServerInterfaceExObject,
+
+    _all_servers_ex = { # Keeps track of all server objects
+        # int(port_number): EthernetServerInterfaceExObject,
     }
     _ports_in_use = []  # list of ints representing ports that are in use
 
     def __new__(cls, *args, **kwargs):
+        '''
+        If the programmer tries to instantiate 2 objects with the same port number,
+            a Exception will be thrown.
+        However, if the programmer wishes, they can call EthernetServerInterfaceEx.clear_port_in_use().
+            This will return the same previously instantiated object.
+            Dont do this unless you really mean understand how server listening ports work on the IPCP.
+            Tested on IPCP FW 2.0.6.10
+        '''
         print('EthernetServerInterfaceEx.__new__(args={}, kwargs={})'.format(args, kwargs))
 
         if len(args) > 0:
@@ -850,6 +962,10 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
         print('EthernetServerInterfaceEx.__init__ complete')
 
     def StartListen(self):
+        '''
+        Overriding method so we can keep track of listening state
+        :return:
+        '''
         print('EthernetServerInterfaceEx.StartListen() before={}'.format(self._listen_state))
         if self._listen_state is not 'Listening':
             self._listen_state = super().StartListen()
@@ -862,8 +978,20 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
         super().StopListen()
         self._listen_state = 'Not Listening'
 
+    @property
+    def IsListening(self):
+        '''
+        :return: str 'Listening' or 'Not listening' or other reason why not listening
+        '''
+        return self._listen_state
+
     @classmethod
     def port_in_use(cls, port_number):
+        '''
+        Used to check if there is a server using this port_number already
+        :param port_number: int
+        :return: bool
+        '''
         if not isinstance(port_number, int):
             raise Exception('port_number must be of type "int"')
 
@@ -876,6 +1004,11 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
 
     @classmethod
     def clear_port_in_use(cls, port_number):
+        '''
+        See __new__
+        :param port_number: int
+        :return:
+        '''
         print('EthernetServerInterfaceEx.clear_port_in_use({})'.format(port_number))
         if port_number in cls._ports_in_use:
             cls._ports_in_use.remove(port_number)
@@ -898,11 +1031,6 @@ class EthernetServerInterfaceEx(extronlib.interface.EthernetServerInterfaceEx):
         yield 'Type', str(type(self))
 
 
-class EthernetServerInterfaceExEncrypted(EthernetServerInterfaceEx):
-    # TODO: a class that can send/rx encrypted data
-    pass
-
-
 class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
     pass
 
@@ -910,7 +1038,7 @@ class EthernetServerInterface(extronlib.interface.EthernetServerInterface):
 class FlexIOInterface(extronlib.interface.FlexIOInterface):
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         yield 'Port', self.Port
         yield 'Host.DeviceAlias', self.Host.DeviceAlias
@@ -927,7 +1055,7 @@ class IRInterface(extronlib.interface.IRInterface):
 class RelayInterface(extronlib.interface.RelayInterface):
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         yield 'Port', self.Port
         yield 'Host.DeviceAlias', self.Host.DeviceAlias
@@ -1060,13 +1188,14 @@ class SerialInterface(extronlib.interface.SerialInterface):
     '''2017-07-28
     DO NOT OVERRIDE THIS __repr__ method!
     It will cause SerialInterface instantiation to hang and you will waste an entire day tracking it down.
+    IPCP FW 2.0.6.10
     '''
     #def __repr__(self):
         #return str(self)
 
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         for item in ['Baud',
                      'CharDelay',
@@ -1086,7 +1215,7 @@ class SerialInterface(extronlib.interface.SerialInterface):
 class SWPowerInterface(extronlib.interface.SWPowerInterface):
     def __iter__(self):
         '''
-        This allows an interface to be cast as a dict
+        This allows this interface to be cast as a dict
         '''
         yield 'Host.DeviceAlias', self.Host.DeviceAlias
         yield 'Port', self.Port
@@ -1099,7 +1228,8 @@ class VolumeInterface(extronlib.interface.VolumeInterface):
 
 # extronlib.device **************************************************************
 class ProcessorDevice(extronlib.device.ProcessorDevice):
-    _relay_ports_in_use = {# ProcessorDevice.DeviceAlias: ['RLY1', 'RLY2', ...]
+    _relay_ports_in_use = {
+        # ProcessorDevice.DeviceAlias: ['RLY1', 'RLY2', ...]
     }
 
     _relay_instances = {  # ProcessorDevice.DeviceAliasA: {
@@ -1281,7 +1411,7 @@ class ProcessorDevice(extronlib.device.ProcessorDevice):
 
     def __str__(self):
         try:
-            return 'self={}, self.DeviceAlias={}, self.IPAddress={}'.format(super().__str__(), self.DeviceAlias,
+            return '<self={}, self.DeviceAlias={}, self.IPAddress={}>'.format(super().__str__(), self.DeviceAlias,
                                                                             self.IPAddress)
         except:
             return super().__str__()
@@ -1295,30 +1425,30 @@ mirrorDict = {} #This dict will keep track of which UIDevices are mirrored
 
 class UIDevice(extronlib.device.UIDevice):
 
-    _allUIDevices = set()
+    _allUIDevices = set() #Hold all UIDevices
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         self.PageData = {
-            #            'Page Name': 'Showing', #Possible values: 'Showing', 'Hidden', 'Unknown'
+            #'Page Name': 'Showing', #Possible values: 'Showing', 'Hidden', 'Unknown'
         }
 
         self.PopupData = {
-            #            'Popup Name': 'Showing', #Possible values: 'Showing', 'Hidden', 'Unknown'
+            #'Popup Name': 'Showing', #Possible values: 'Showing', 'Hidden', 'Unknown'
         }
 
         self.PopupWaits = {
-            #               'Popup Name': WaitObject,
+            #'Popup Name': WaitObject,
         }
 
-        self._exclusive_modals = []
+        self._exclusive_modals = [] #['popup name 1', 'popup name 2', ...]
 
         self._PageHistory = []  # hold last X pages
         self._PageOffset = 0  # 0 = last entry in
 
         self._mirrorMaster = None # Points to the master TLP, might be self, or None if not in mirror mode
-        self._mirrorSlaves = [] #list of UIDevice objects (does not include self)
+        self._mirrorSlaves = [] #list of slave UIDevice objects (does not include self), if self is a slave, this should be []
 
         if self not in self._allUIDevices:
             self._allUIDevices.add(self)
@@ -1435,7 +1565,19 @@ class UIDevice(extronlib.device.UIDevice):
     @classmethod
     def GetAllButtons(cls, ID=None, host=None):
         print('GetAllButtons(ID={}, host={})'.format(ID, host))
-        return cls.GetAllObjects(ID, host, type='Button')
+        rtnObjects = []
+
+        if host is not None:
+            if not isinstance(host, list):
+                host = [host]
+                print('host changed to', host)
+
+        for h in host:
+            btn = Button._allButtonsDict.get(h, {}).get(ID, None)
+            if btn is not None:
+                rtnObjects.append(btn)
+
+        return rtnObjects
 
     @classmethod
     def GetAllLevels(cls, ID=None, host=None):
@@ -1462,9 +1604,8 @@ class UIDevice(extronlib.device.UIDevice):
         :return: Button object
         '''
         print('GetAllObjects(ID={}, host={}, type={})'.format(ID, host, type))
-        if type == 'Button':
-            allObjects = Button._allGSTButtons
-        elif type == 'Level':
+
+        if type == 'Level':
             allObjects = Level._allLevels
         elif type == 'Label':
             allObjects = Label._allLabels
@@ -1483,7 +1624,7 @@ class UIDevice(extronlib.device.UIDevice):
         if ID is None:
             if host is None or len(host) == 0:
                 # If ID and host are None, return all objecs
-                return allObjects
+                rtnObjects = list(allObjects)
             else:
                 # If ID is None, but host is not None, return all buttons that are for included host
                 for obj in allObjects:
@@ -1511,11 +1652,10 @@ class UIDevice(extronlib.device.UIDevice):
     def SetExclusiveModals(self, modals):
         self._exclusive_modals = modals
 
-    def SetVisible(self, id, state):
-        for btn in Button._allGSTButtons:
-            if btn.ID == id:
-                if btn.Host == self:
-                    btn.SetVisible(state)
+    def SetVisible(self, ID, state):
+        btn = Button._allButtonsDict.get(self, {}).get(ID, None)
+        if btn is not None:
+            btn.SetVisible(state)
 
     def __str__(self):
         return '<gs_tools.UIDevice object DeviceAlias={}, IPAddress={}>'.format(self.DeviceAlias, self.IPAddress)
@@ -1710,7 +1850,7 @@ def AddTrace(InterfaceObject):
     '''
     Calling AddTrace(extronlib.interface.* ) will add a print statement to all Send/SendAndWait/ReceiveData calls
     This is non-destructive to the event handlers that have already been defined.
-    :param InterfaceObject:
+    :param extronlib.interface.*:
     :return:
     '''
     print('AddTrace({})'.format(InterfaceObject))
@@ -1922,6 +2062,21 @@ class PollingEngine():
 # Feedback helpers **************************************************************
 
 class VisualFeedbackHandler():
+    '''
+    Use this class to automatically update UI feedback when certain conditions are met.
+    Example:
+
+    FB = VisualFeedbackHandler()
+    FB.StateFeedback(
+        feedbackObject=BtnMediaPortFrontCam,
+        state=1,
+        interface=XTP,
+        command='OutputTieStatus',
+        value='2',#input number
+        qualifier={'Output': '3', 'Tie Type': 'Video'},
+        callback=MediaPortCameraCallback, #Call this after setting state
+        )
+    '''
     # Class functions
     FeedbackDicts = []
 
@@ -2087,6 +2242,13 @@ class VisualFeedbackHandler():
 
 # Helpful functions *************************************************************
 def ShortenText(text, MaxLength=7, LineNums=2):
+    '''
+    When a string is too long, use this to quickly shorten it.
+    :param text: str
+    :param MaxLength: int
+    :param LineNums: int
+    :return: str
+    '''
     text = text.replace('Lectern', 'Lect')
     text = text.replace('Quantum', 'Qtm')
     text = text.replace('Projector', 'Proj')
@@ -2131,8 +2293,8 @@ def PrintProgramLog():
    print = PrintProgramLog()
    """
 
-    def print(*args, sep=' ', end='\n', severity='info',
-              **kwargs):  # override the print function to write to program log instead
+    def print(*args, sep=' ', end='\n', severity='info', **kwargs):
+        # override the print function to write to program log instead
         # Following is done to emulate behavior Python's print keyword arguments
         # (ie. you can set the arguments to None and it will do the default behavior)
         if sep is None:
@@ -2141,10 +2303,7 @@ def PrintProgramLog():
         if end is None:
             end = '\n'
 
-        string = []
-        for arg in args:
-            string.append(str(arg))
-        ProgramLog(sep.join(string) + end, severity)
+        ProgramLog(sep.join(str(arg) for arg in args) + end, severity)
 
     return print
 
@@ -2152,11 +2311,20 @@ def PrintProgramLog():
 class PersistentVariables():
     '''
     This class is used to easily manage non-volatile variables using the extronlib.system.File class
+    For example:
+
+    PV = PersistentVariables()
+    PV.Set('x', 1)
+    print(PV.Get('x'))
+    >> 1
+    #reboot processor
+    print(PV.Get('x'))
+    >> 1
+
     '''
 
     def __init__(self, filename=None):
         '''
-
         :param filename: string like 'data.json' that will be used as the file name for the File class
         '''
         if filename is None:
@@ -2227,6 +2395,13 @@ class PersistentVariables():
 
         return varValue
 
+    '''
+    The user can subscribe to PV changes
+    Example:
+    @event(PV, 'ValueChanges')
+    def HandleChange(varName, newValue):
+        print('The var {} has changed to {}'.format(varName, newValue))
+    '''
     @property
     def ValueChanges(self):
         return self._valueChangesCallback
@@ -2306,7 +2481,13 @@ def toPercent(Value, Min=0, Max=100):
 def IncrementIP(IP):
     '''
     This function will take an IP and increment it by one.
-    For example: IP='192.168.254.255' will return '192.168.255.0'
+    Examples:
+        IP='192.168.254.1' will return '192.168.255.2'
+        IP='192.168.254.2' will return '192.168.255.3'
+        ...
+        IP='192.168.254.254' will return '192.168.254.255'
+        IP='192.168.254.255' will return '192.168.255.0'
+
     :param IP: str like '192.168.254.254'
     :return: str like '192.168.254.255'
     '''
@@ -2384,6 +2565,11 @@ def phone_format(n):
 
 
 def strip_non_numbers(s):
+    '''
+    removes any non digits from string
+    :param s: str
+    :return: str
+    '''
     new_s = ''
     for ch in s:
         if ch.isdigit():
@@ -2394,8 +2580,9 @@ def strip_non_numbers(s):
 class Keyboard():
     '''
         An object that manages the keyboard buttons.
+        Handles Shift and CAPS-lock (press and hold Shift to enable CAPS-lock
+        )
         If a keyboard button is pressed, self.string will be updated accordingly.
-
         This will allow the programmer to copy/paste the keyboard GUI page into their GUID project without worrying about the KeyIDs
         '''
 
@@ -2616,7 +2803,7 @@ class Keyboard():
         '''
         Changes the ID of the object to receive feedback.
         This class will remember the text that should be applied to each feedback object.
-        Allowing the user/programmer to switch which field the keyboard is modifiying, on the fly.
+        Allowing the user/programmer to switch which Button/Label the keyboard is modifiying, on the fly.
         '''
         # Save the current text
         self.TextFields[self.FeedbackObject] = self.GetString()
@@ -2632,9 +2819,17 @@ class Keyboard():
         self._updateLabel()
 
     def GetFeedbackObject(self):
+        '''
+        :return: the current feedback ovject
+        '''
         return self.FeedbackObject
 
     def SetPasswordMode(self, mode):
+        '''
+        Mask the entered characters with '*'
+        :param mode: bool
+        :return:
+        '''
         self._password_mode = mode
 
 
@@ -2643,10 +2838,84 @@ ScrollingTable_debug = True
 
 
 class ScrollingTable():
+    '''
+    This class represents a spreadsheet with many cells.
+    The cells will be filled with data and scrollable on a TLP.
+
+    Example:
+    ManageDevicesTable = ScrollingTable()
+
+    # The level that represents the current scroll position, (optional)
+    ManageDevicesTable.register_scroll_updown_level(Level(TLP, 1))
+
+    # These are the Buttons that represent the headers for each column.
+    # Pressing a header will sort the table by that header
+    ManageDevicesTable.register_header_buttons(
+        Button(TLP, 13500, PressFeedback='State'),
+        Button(TLP, 13501, PressFeedback='State'),
+        Button(TLP, 13502, PressFeedback='State'),
+        Button(TLP, 13503, PressFeedback='State'),
+        )
+
+    # To force the columns to be in a certain order (optional)
+    # If omitted, order will follow dict order (which is arbitrary)
+    ManageDevicesTable.set_table_header_order([
+        'Device Name',
+        'Connection Status',
+        'Port',
+        'Reservation Status',
+        'Settings',
+    ])
+
+    # Buttons for all of the visible cells on the UI
+    for row_number in range(0, 7 + 1):
+        ManageDevicesTable.register_row_buttons(
+            row_number,
+            Button(TLP, 13000 + row_number, PressFeedback='State'), #The order of these args is the order from left to right on the TLP for this row_number
+            Button(TLP, 13100 + row_number, PressFeedback='State'),
+            Button(TLP, 13200 + row_number, PressFeedback='State'),
+            Button(TLP, 13300 + row_number, PressFeedback='State'),
+            Button(TLP, 13400 + row_number, PressFeedback='State'),
+            )
+
+    # The buttons to scroll up/down
+    # This is so the Button/Label can be shown/hidden according to scroll-ability
+    # To actually make the table scroll up/down, you need to call the .scroll_up() function elsewhere
+    ManageDevicesTable.register_scroll_up_button(Button(TLP, 2))
+    ManageDevicesTable.register_scroll_down_button(Button(TLP, 3))
+    ManageDevicesTable.register_scroll_updown_label(Label(TLP, 7))
+
+    # Add some data to the table
+    if ManageDevicesTable.has_row({'Device Name': device_name}):
+        ManageDevicesTable.update_row_data(
+            where_dict={'Device Name': device_name},
+            replace_dict={'Connection Status': value,
+                          'Port': Port},
+        )
+    else: # row does not exist yet
+        ManageDevicesTable.add_new_row_data(
+            {'Device Name': device_name,
+             'Connection Status': value,
+             'Port': Port,
+             'Settings': '\xC2',
+             })
+        ManageRoomsTable.sort_by_column(0) # Sort the table by column index 0
+
+    # If the user interacts with the table, events can be subscribed to
+    @event(ManageDevicesTable, 'CellTapped'):
+    def ManageDevicesTableEventTapped(table, cell):
+        print('cell with value {} was tapped'.format(cell.get_value()))
+
+    @event(ManageDevicesTable, 'CellHeld'):
+    def ManageDevicesTableEventHeld(table, cell):
+        print('cell with value {} was held'.format(cell.get_value()))
+
+    '''
     # helper class Cell()**************************************************************
     class Cell():
         '''
         Represents a single cell in a scrolling table
+        Not to be accessed by user directly, only to help with ScrollingTable
         '''
 
         def __init__(self, parent_table, row, col, btn=None,
@@ -3324,6 +3593,8 @@ class UserInputClass:
     Get an integer/float/text from the user: UserInput.get_keyboard('popupname', callback=CallbackFunction)
     Get a calendar data as a datetime.datetime object: UserInput.get_date(**kwargs)
     etc...
+
+    Note you must first call .setup_keyboard and/or .setup_calendar, see comments on those methods for more details
     '''
     _instances = [] #hold all instances so that instances can request each other to update
 
@@ -4369,6 +4640,7 @@ class NonGlobal:
     '''
     This class could be replaced by global vars, but this class makes the management and readability better
     values will be lost upon power-cycle or re-upload
+    #TODO - consider replacing with collections.namedtuple
     '''
 
     def Set(self, name_of_value_str, value):
@@ -4399,10 +4671,12 @@ def GetRandomPassword(length=512):
     return pw
 
 timerDebug = False
-# Timer class (safer than recursive Wait objects per PD)
+
 class Timer:
     def __init__(self, t, func):
         '''
+        Per PD, a class like this will be un-officially implemented in IPCP FW after FW 2.6.0.10
+
         This class calls self.func every t-seconds until Timer.Stop() is called.
         It has protection from the "cant start thread" error.
         :param t: float
@@ -4470,6 +4744,16 @@ def GetDatetimeKwargs(dt):
     '''
     This converts a datetime.datetime object to a dict.
     This is useful for saving a datetime.datetime object as a json string
+
+    example:
+    # Save dt to a file
+    dt = datetime.datetime.now()
+    kwargs = GetDatetimeKwargs(dt)
+    File('newfile.json', mode='wt').write(json.dumps(kwargs))
+
+    # Later restore dt from file
+    dt = datetime.datetime(json.loads(File('oldfile.json', mode='rt').read()))
+
     :param dt: datetime.datetime
     :return: dict
     '''
@@ -4487,6 +4771,12 @@ def GetDatetimeKwargs(dt):
 class Schedule:
     '''
     An easy class to call a function at a particular datetime.datetime
+
+    Example:
+    dt_nextWeek = datetime.datetime.now() + datetime.timedelta(days=7)
+    s = Schedule()
+    s.Set(dt_nextWeek, lambda: print('next week is now')) #1 week from now, this will be printed
+
     '''
 
     def __init__(self):
@@ -4533,6 +4823,12 @@ class Schedule:
 
 
 def HandleConnection(*args, **kwargs):
+    '''
+    This will maintain the connetion to the device in args[0], other optional params can be passed in args/kwargs
+    :param args:
+    :param kwargs:
+    :return:
+    '''
     if UniversalConnectionHandler._defaultCH is None:
         newCH = UniversalConnectionHandler()
         UniversalConnectionHandler._defaultCH = newCH
@@ -4541,13 +4837,18 @@ def HandleConnection(*args, **kwargs):
 
 
 def ConnectionHandlerLogicalReset(interface):
-    # for backwards compatibility mostly
+    # for backwards compatibility mostly, but if you want to reset the logical connection counter, you can
     if interface in UniversalConnectionHandler._defaultCH._send_counters:
         UniversalConnectionHandler._defaultCH._send_counters[interface] = 0
     pass
 
 
 def RemoveConnectionHandlers(interface):
+    '''
+    Stop handling the connection for interface
+    :param interface:
+    :return:
+    '''
     print('RemoveConnectionHandlers\n interface={}'.format(interface))
     interface.Connected = None
     interface.Disconnected = None
@@ -4557,6 +4858,12 @@ def RemoveConnectionHandlers(interface):
 
 
 def AddConnectionCallback(interface, callback):
+    '''
+    Add a callback when the interface goes Connected/Disconnected
+    :param interface:
+    :param callback:
+    :return:
+    '''
     interface.Connected = callback
     interface.Disconnected = callback
 
@@ -4565,6 +4872,14 @@ statusButtons = {}
 
 
 def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
+    '''
+    Set a button state based on interface Connected/Disconencted events
+    :param interface:
+    :param button:
+    :param GREEN:
+    :param RED:
+    :return:
+    '''
     if UniversalConnectionHandler._defaultCH is None:
         newCH = UniversalConnectionHandler()
         UniversalConnectionHandler._defaultCH = newCH
@@ -4591,6 +4906,13 @@ def AddStatusButton(interface, button, GREEN=GREEN, RED=RED):
 debugUCH = False
 
 class UniversalConnectionHandler:
+    '''
+    Handle connections for any type of interface
+    Example:
+    switcher = EthernetClientInterface(IP, Port)
+    UCH = UniversalConnectionHandler()
+    UCH.maintain(switcher) #The connection will now be maintained forever.
+    '''
     _defaultCH = None
 
     def __init__(self, filename='connection_handler.log'):
@@ -5404,6 +5726,10 @@ class UniversalConnectionHandler:
         self._disconnected_callback = callback
 
 class DirectoryNavigationClass:
+    '''
+    Allows user to navigate through the internal file system using buttons on the UIDevice
+
+    '''
     def __init__(self,
              lblCurrentDirectory=None,
              btnScrollUp=None,
@@ -5797,14 +6123,14 @@ def SortListDictByKey(aList, sortKey, reverse=False):
     returns a new list with the items(dicts) sorted by key
 
     Example
-    aList = [{'Value', '1'}, {'Value', '3'}, {'Value', '2'}...]
+    aList = [{'Value': '1'}, {'Value': '3'}, {'Value': '2'}...]
     newList = SortListOfDictsByKey(aList, 'Value')
     print(newList)
-    >>[{'Value', '1'}, {'Value', '2'}, {'Value', '3'}...]
+    >>[{'Value': '1'}, {'Value': '2'}, {'Value': '3'}...]
 
     newList = SortListOfDictsByKey(aList, 'Value', 'decending')
     print(newList)
-    >>[{'Value', '3'}, {'Value', '2'}, {'Value', '1'}...]
+    >>[{'Value': '3'}, {'Value': '2'}, {'Value': '1'}...]
 
     '''
 
@@ -5823,7 +6149,7 @@ def SortListOfDictsByKeys(aList, sortKeys=None, reverse=False):
     returns a new list of dicts
 
     Example:
-    #a list filled with dicts that are not in any particular order
+    # a list filled with dicts that are not in any particular order
     theList = [
         {'valueB': 1, 'valueC': 2, 'valueA': 1} ,
         {'valueB': 0, 'valueC': 1, 'valueA': 0} ,
@@ -5973,12 +6299,18 @@ def _bytes_to_string(binary):
     return "".join(chr(b) for b in binary)
 
 def StartVTLPServer(hostIPAddress, hostIPPort=8080):
+    '''
+    This severs a simple web page on the primary processor.
+    Anytime a browser connects to port hostIPPort, the user will see a simple page with links to the VTLP for each UIDevice
+
+    :param hostIPAddress: str
+    :param hostIPPort: int
+    :return:
+    '''
     print('StartVTLPServer')
     tlpServer = EthernetServerInterfaceEx(hostIPPort)
 
     regexGUID = re.compile('var\/nortxe\/gve\/web\/vtlp\/(.*?)\/layout\.json')
-
-
 
     @event(tlpServer, 'Connected')
     def tlpServerConnectionEvent(client, state):
@@ -6025,14 +6357,15 @@ HTTP/1.1 200 OK
 </html>
 '''.format(table)
 
-        #send html to client and disconnect(disconnect lets the client knowo the page is done loading)
+        #send html to client and disconnect(disconnect lets the client know the page is done loading)
         client.Send(html)
         client.Disconnect()
 
     tlpServer.StartListen()
 
 #Processor port map ************************************************************
-
+#Use this to determine how may ports a particualr processor has
+#TODO - the rest of the processors
 PROCESSOR_CAPABILITIES = {
     #'Part Number': {'Serial Ports': 8, 'IR/S Ports': 8, 'Digital Inputs...
 }

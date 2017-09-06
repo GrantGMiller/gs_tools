@@ -4776,7 +4776,6 @@ def GetDatetimeKwargs(dt):
 class Schedule:
     '''
     An easy class to call a function at a particular datetime.datetime
-
     Example:
     dt_nextWeek = datetime.datetime.now() + datetime.timedelta(days=7)
     s = Schedule()

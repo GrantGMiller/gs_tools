@@ -405,7 +405,8 @@ class Button(extronlib.ui.Button):
         print('gs_tools.Button.SetState(args={}, kwargs={}) self={}'.format(args, kwargs, self))
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetState', *args, **kwargs)
-        super().SetState(*args, **kwargs)
+        if self.State is not args[0]:
+            super().SetState(*args, **kwargs)
 
     def SetVisible(self, *args, **kwargs):
         #Method override to allow for mirroring
@@ -464,6 +465,8 @@ class Label(extronlib.ui.Label):
         #justify='Left' means chop off the right side
         #justify='Right' means chop off the left side
         print('gs_tools.Label.SetText(text={}, limitLen={}, elipses={}, justify={})'.format(text, limitLen, elipses, justify))
+
+        text = str(text)
 
         if self.Host.IsMaster():
             self._DoMirrorMethod('SetText', text, limitLen=limitLen, elipses=elipses, justify=justify)
@@ -1677,8 +1680,9 @@ class UIDevice(extronlib.device.UIDevice):
         if self._mirrorMaster is None:
             self._mirrorMaster = self
             for slave in slaveTLPs:
-                slave._MakeSlave(self)
-                self._mirrorSlaves.append(slave)
+                if slave not in self._mirrorSlaves:
+                    slave._MakeSlave(self)
+                    self._mirrorSlaves.append(slave)
         else:
             raise Exception('Error: UIDevice with alias "{}" is already a slave of UIDevice with alias "{}"'.format(self.DeviceAlias, self._mirrorMaster.DeviceAlias))
         print('self={}, self._mirrorMaster={}'.format(self, self._mirrorMaster))
@@ -1719,7 +1723,7 @@ class UIDevice(extronlib.device.UIDevice):
         # If all slaves are released, self returns to native mode also
         print('UIDevice.ReleaseSlave(*slaveTLPs={})'.format(slaveTLPs))
         for slave in slaveTLPs:
-            self._mirrorSlaves.pop(slave)
+            self._mirrorSlaves.remove(slave)
             slave._RemoveMaster()
 
         if len(self._mirrorSlaves) == 0:
@@ -2834,7 +2838,7 @@ class Keyboard():
 
 
 # ScrollingTable ****************************************************************
-ScrollingTable_debug = True
+ScrollingTable_debug = False
 
 
 class ScrollingTable():
@@ -3148,6 +3152,7 @@ class ScrollingTable():
         ScrollingTable.register_row(row_number=1, Button(TLP, 1), Button(TLP, 2) )
         '''
         for index, arg in enumerate(args):
+            print('arg=', arg)
             arg.SetText('')
             col_number = index
             self.register_cell(row_number, col_number, btn=arg,

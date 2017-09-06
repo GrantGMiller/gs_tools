@@ -4781,7 +4781,6 @@ class Schedule:
     dt_nextWeek = datetime.datetime.now() + datetime.timedelta(days=7)
     s = Schedule()
     s.Set(dt_nextWeek, lambda: print('next week is now')) #1 week from now, this will be printed
-
     '''
 
     def __init__(self):

@@ -11,7 +11,7 @@ from extronlib.ui import Button, Knob, Label, Level
 from extronlib.system import Clock, MESet, Wait, File
 
 from devices import *
-import SMTP_client
+import smtp_client
 import time
 
 AttributeList = ['DeviceAlias',
@@ -158,7 +158,7 @@ def MakeSystemReport(filename='system_report.txt'):
     print('End MakeSystemReport()')
     
 def EmailSystemReport(email, filename='system_report.txt', systemName='SystemReport'):
-    Email = SMTP_client.SMTP_Client('10.1.5.49', 25)
+    Email = smtp_client.SMTP_Client('10.1.5.49', 25)
     Email.Receiver([email])
     Email.Subject('System Report: {}'.format(systemName))
     Email.Sender('{}@extron.com'.format(systemName))

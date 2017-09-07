@@ -14,7 +14,6 @@ Version 2.0.0 - Added support for self.Set('AnnotationType', 'Freehand', {'UI': 
 
 V2.0.2 - 2107-05-23
 Added class UniversalConnectionHandler to manage Server connections
-test comment delete later
 '''
 
 from extronlib import event

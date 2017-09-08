@@ -9,7 +9,7 @@ from base64 import b64encode, b64decode
 import datetime
 import time
 
-DEBUG = False
+DEBUG = True
 if not DEBUG:
     print = lambda *a, **k: None
 
@@ -175,6 +175,7 @@ class Exchange():
                  ):
 
         self.httpURL = 'https://{0}/EWS/exchange.asmx'.format(server)
+        print('self.httpURL=', self.httpURL)
         #self.httpURL = 'http://{0}/EWS/exchange.asmx'.format(server) #testing only
         self.encode = b64encode(bytes('{0}:{1}'.format(username, password), "ascii"))
         self.login = str(self.encode)[2:-1]

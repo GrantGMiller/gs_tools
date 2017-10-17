@@ -300,6 +300,9 @@ def StringToBytes(text):
 def BytesToString(binary):
     return "".join(chr(b) for b in binary)
 
+def BytesToInt(b):
+    return int.from_bytes(b, byteorder='big')
+
 #Processor port map ************************************************************
 
 PROCESSOR_CAPABILITIES = {

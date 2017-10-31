@@ -365,7 +365,7 @@ def ConvertDictToTupTup(d):
     # Converts a dict to a tuple of tuples.
     # This is hashable and can be used as a dict key unlike a regular dict()
     if d is None:
-        return tuple()
+        return (None, None)
     else:
         return tuple(d.items())
 

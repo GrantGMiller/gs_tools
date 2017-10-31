@@ -361,5 +361,12 @@ PROCESSOR_CAPABILITIES['60-1417-01'] = { # IPCP Pro 350
 
 print('End  GST')
 
+def ConvertDictToTupTup(d):
+    # Converts a dict to a tuple of tuples.
+    # This is hashable and can be used as a dict key unlike a regular dict()
+    if d is None:
+        return tuple()
+    else:
+        return tuple(d.items())
 
 

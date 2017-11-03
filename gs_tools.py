@@ -3,7 +3,6 @@ This module is meant to be a collection of tools to simplify common task in AV c
 Started: March 28, 2017 and appended to continuously
 '''
 
-
 import extronlib
 from extronlib import event
 from extronlib.device import ProcessorDevice, UIDevice
@@ -26,7 +25,7 @@ import random
 # Set this false to disable all print statements ********************************
 debug = False
 if not debug:
-    #Disable print statements
+    # Disable print statements
     print = lambda *args, **kwargs: None
 
 
@@ -95,6 +94,8 @@ def PrintProgramLog():
 
 
 RemoteTraceServer = None
+
+
 def RemoteTrace(IPPort=1024):
     '''
     This function return a new print function that will print to stdout and also send to any clients connected to the server defined on port IPPort
@@ -121,7 +122,7 @@ def RemoteTrace(IPPort=1024):
 
         for client in RemoteTraceServer.Clients:
             client.Send(string + '\r\n')
-        #ProgramLog(string, 'info')
+            # ProgramLog(string, 'info')
 
     return NewPrint
 
@@ -242,6 +243,7 @@ def StripNonNumbers(s):
             new_s += ch
     return new_s
 
+
 # Non-global variables **********************************************************
 class NonGlobal:
     '''
@@ -268,11 +270,12 @@ def HashIt(string=''):
     string += arbitrary_string
     return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
 
+
 def GetRandomPassword(length=512):
     pw = ''
     for i in range(length):
-        ch = random.choice(['1','2','3','4','5','6','7','8','9','0',
-                            'a','b','c','d','f'])
+        ch = random.choice(['1', '2', '3', '4', '5', '6', '7', '8', '9', '0',
+                            'a', 'b', 'c', 'd', 'f'])
         pw += ch
     return pw
 
@@ -294,21 +297,25 @@ def GetDatetimeKwargs(dt):
          }
     return d
 
+
 def StringToBytes(text):
     return list(ord(c) for c in text)
+
 
 def BytesToString(binary):
     return "".join(chr(b) for b in binary)
 
+
 def BytesToInt(b):
     return int.from_bytes(b, byteorder='big')
 
-#Processor port map ************************************************************
+
+# Processor port map ************************************************************
 
 PROCESSOR_CAPABILITIES = {
-    #'Part Number': {'Serial Ports': 8, 'IR/S Ports': 8, 'Digital Inputs...
+    # 'Part Number': {'Serial Ports': 8, 'IR/S Ports': 8, 'Digital Inputs...
 }
-PROCESSOR_CAPABILITIES['60-1418-01'] = { # IPCP Pro 550
+PROCESSOR_CAPABILITIES['60-1418-01'] = {  # IPCP Pro 550
     'Serial Ports': 8,
     'IR/S Ports': 8,
     'Digital I/Os': 0,
@@ -316,8 +323,19 @@ PROCESSOR_CAPABILITIES['60-1418-01'] = { # IPCP Pro 550
     'Relays': 8,
     'Power Ports': 4,
     'eBus': True,
-    }
-PROCESSOR_CAPABILITIES['60-1413-01'] = { # IPL Pro S3
+}
+
+PROCESSOR_CAPABILITIES['60-1412-01'] = {  # IPL Pro S1
+    'Serial Ports': 1,
+    'IR/S Ports': 0,
+    'Digital I/Os': 0,
+    'FLEX I/Os': 0,
+    'Relays': 0,
+    'Power Ports': 0,
+    'eBus': False,
+    'Contact': 0,
+}
+PROCESSOR_CAPABILITIES['60-1413-01'] = {  # IPL Pro S3
     'Serial Ports': 3,
     'IR/S Ports': 0,
     'Digital I/Os': 0,
@@ -325,8 +343,8 @@ PROCESSOR_CAPABILITIES['60-1413-01'] = { # IPL Pro S3
     'Relays': 0,
     'Power Ports': 0,
     'eBus': False,
-    }
-PROCESSOR_CAPABILITIES['60-1416-01'] = { # IPL Pro CR88
+}
+PROCESSOR_CAPABILITIES['60-1416-01'] = {  # IPL Pro CR88
     'Serial Ports': 0,
     'IR/S Ports': 0,
     'Digital I/Os': 0,
@@ -335,9 +353,9 @@ PROCESSOR_CAPABILITIES['60-1416-01'] = { # IPL Pro CR88
     'Power Ports': 0,
     'eBus': False,
     'Contact': 8,
-    }
+}
 
-PROCESSOR_CAPABILITIES['60-1429-01'] = { # IPCP Pro 250
+PROCESSOR_CAPABILITIES['60-1429-01'] = {  # IPCP Pro 250
     'Serial Ports': 2,
     'IR/S Ports': 1,
     'Digital I/Os': 4,
@@ -346,9 +364,9 @@ PROCESSOR_CAPABILITIES['60-1429-01'] = { # IPCP Pro 250
     'Power Ports': 0,
     'eBus': True,
     'Contact': 0,
-    }
+}
 
-PROCESSOR_CAPABILITIES['60-1417-01'] = { # IPCP Pro 350
+PROCESSOR_CAPABILITIES['60-1417-01'] = {  # IPCP Pro 350
     'Serial Ports': 3,
     'IR/S Ports': 2,
     'Digital I/Os': 4,
@@ -357,9 +375,10 @@ PROCESSOR_CAPABILITIES['60-1417-01'] = { # IPCP Pro 350
     'Power Ports': 0,
     'eBus': True,
     'Contact': 0,
-    }
+}
 
 print('End  GST')
+
 
 def ConvertDictToTupTup(d):
     # Converts a dict to a tuple of tuples.
@@ -368,5 +387,3 @@ def ConvertDictToTupTup(d):
         return (None, None)
     else:
         return tuple(d.items())
-
-

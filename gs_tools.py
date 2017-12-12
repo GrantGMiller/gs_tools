@@ -387,3 +387,10 @@ def ConvertDictToTupTup(d):
         return (None, None)
     else:
         return tuple(d.items())
+
+
+def GetWeekOfMonth(dt):
+    weeks = calendar.monthcalendar(dt.year, dt.month)
+    for index, week in enumerate(weeks):
+        if dt.day in week:
+            return index + 1

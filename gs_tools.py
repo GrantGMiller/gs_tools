@@ -23,7 +23,7 @@ import re
 import random
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 if not debug:
     # Disable print statements
     print = lambda *args, **kwargs: None

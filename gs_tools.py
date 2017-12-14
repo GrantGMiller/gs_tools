@@ -394,3 +394,15 @@ def GetWeekOfMonth(dt):
     for index, week in enumerate(weeks):
         if dt.day in week:
             return index + 1
+
+global lastTime
+lastTime = time.time()
+def PrintTimeDiff(tag=None):
+    global lastTime
+    nowTime = time.time()
+    diff = nowTime - lastTime
+    if tag is not None:
+        print('tag={}, TimeDiff={}'.format(tag, round(diff, 2)))
+    else:
+        print('TimeDiff={}'.format(round(diff, 2)))
+    lastTime = nowTime

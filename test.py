@@ -1,6 +1,10 @@
-import gs_tools
+from gs_tools import TimeIt, WriteTimeItFile
+import time
 
-d = {'one':1, 'two': 2}
+@TimeIt()
+def TestFunc(arg1, arg2, keyarg1=1, keyarg2=2):
+    time.sleep(1)
+    print('arg1={}, arg2={}, keyarg1={}, keyarg2={}'.format(arg1, arg2, keyarg1, keyarg2))
 
-t = gs_tools.ConvertDictToTupTup(d)
-print(t)
+TestFunc(3,4)
+WriteTimeItFile()

@@ -406,3 +406,51 @@ def PrintTimeDiff(tag=None):
     else:
         print('TimeDiff={}'.format(round(diff, 2)))
     lastTime = nowTime
+
+timeItLog = {
+    #'Func name': float(avgTime)
+}
+class TimeIt:
+    def __call__(self, func):
+        print('TimeIt.__call__ func={}'.format(func))
+        def NewFunc(*args, **kwargs):
+            startTime = time.time()
+            func(*args, **kwargs)
+            total = time.time() - startTime
+            print('TimeIt: It took {} seconds to execute {}(args={}, kwargs={})'.format(
+                round(total, 2),
+                func.__name__,
+                args,
+                kwargs,
+            ))
+
+            name = func.__name__
+            if name not in timeItLog:
+                timeItLog[name] = total
+            else:
+                lastTime = timeItLog[name]
+                avgTime = (lastTime + total)/2
+                timeItLog[name] = avgTime
+
+        return NewFunc
+
+def WriteTimeItFile():
+    with File('TimeIt.log', mode='wt') as file:
+        times = list(timeItLog.values())
+        times.sort()
+        times.reverse()
+        #print('times=', times)
+        sortedTimes = times #from slowest to fastest
+
+        for t in sortedTimes:
+            name = GetKeyFromValue(timeItLog, t)
+            #print('name=', name)
+            file.write('FunctionName="{}", ExecutionTime= {} seconds\n'.format(name, t))
+
+def Loop(t, func):
+    #Call the func every t seconds
+    @Wait(0)
+    def Loop():
+        while True:
+            time.sleep(t)
+            func()

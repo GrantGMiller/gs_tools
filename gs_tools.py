@@ -377,8 +377,6 @@ PROCESSOR_CAPABILITIES['60-1417-01'] = {  # IPCP Pro 350
     'Contact': 0,
 }
 
-print('End  GST')
-
 
 def ConvertDictToTupTup(d):
     # Converts a dict to a tuple of tuples.

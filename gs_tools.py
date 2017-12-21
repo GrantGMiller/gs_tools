@@ -6,7 +6,10 @@ Started: March 28, 2017 and appended to continuously
 from extronlib import event
 from extronlib.system import ProgramLog, File
 from extronlib.interface import EthernetServerInterfaceEx
-from extronlib_pro import Wait
+try:
+    from extronlib_pro import Wait
+except:
+    from extronlib import Wait
 
 try:
     import aes_tools

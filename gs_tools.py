@@ -3,23 +3,19 @@ This module is meant to be a collection of tools to simplify common task in AV c
 Started: March 28, 2017 and appended to continuously
 '''
 
-import extronlib
 from extronlib import event
-from extronlib.device import ProcessorDevice, UIDevice
-from extronlib.system import Wait, ProgramLog, File
+from extronlib.system import ProgramLog, File
 from extronlib.interface import EthernetServerInterfaceEx
+from extronlib_pro import Wait
 
 try:
     import aes_tools
 except:
     pass
 
-import json
 import time
 import hashlib
-import datetime
 import calendar
-import re
 import random
 
 # Set this false to disable all print statements ********************************

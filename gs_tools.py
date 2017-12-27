@@ -23,6 +23,7 @@ import random
 
 # Set this false to disable all print statements ********************************
 debug = True
+oldPrint = print
 if not debug:
     # Disable print statements
     print = lambda *args, **kwargs: None
@@ -445,9 +446,26 @@ def WriteTimeItFile():
             file.write('FunctionName="{}", ExecutionTime= {} seconds\n'.format(name, t))
 
 def Loop(t, func):
-    #Call the func every t seconds
+    #Call the func every t seconds, forever
     @Wait(0)
     def Loop():
         while True:
             time.sleep(t)
             func()
+
+class PrintFunc:
+    '''
+    This will print the function and its arguments every time it is called
+
+    This needs to go on top of the function like this
+    @event(myBtn, 'Pressed')
+    @PrintFunc()
+    def MyBtnEvent(button, state):
+        pass
+    '''
+    def __call__(self, func):
+        #oldPrint('PrintFunc(func={})'.format(func))
+        def NewFunc(*args, **kwargs):
+            oldPrint('{}(args={}, kwargs={})'.format(func.__name__, args, kwargs))
+            func(*args, **kwargs)
+        return NewFunc

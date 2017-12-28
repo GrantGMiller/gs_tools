@@ -9,7 +9,7 @@ from extronlib.interface import EthernetServerInterfaceEx
 try:
     from extronlib_pro import Wait
 except:
-    from extronlib import Wait
+    from extronlib.system import Wait
 
 try:
     import aes_tools

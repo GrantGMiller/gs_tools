@@ -467,5 +467,5 @@ class PrintFunc:
         #oldPrint('PrintFunc(func={})'.format(func))
         def NewFunc(*args, **kwargs):
             oldPrint('{}(args={}, kwargs={})'.format(func.__name__, args, kwargs))
-            func(*args, **kwargs)
+            return func(*args, **kwargs)
         return NewFunc

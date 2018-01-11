@@ -466,6 +466,7 @@ class PrintFunc:
     def __call__(self, func):
         #oldPrint('PrintFunc(func={})'.format(func))
         def NewFunc(*args, **kwargs):
-            oldPrint('{}(args={}, kwargs={})'.format(func.__name__, args, kwargs))
-            return func(*args, **kwargs)
+            ret = func(*args, **kwargs)
+            oldPrint('{}(args={}, kwargs={}) return {}'.format(func.__name__, args, kwargs, ret))
+            return ret
         return NewFunc

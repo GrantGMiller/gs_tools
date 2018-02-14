@@ -299,15 +299,49 @@ def GetDatetimeKwargs(dt):
 
 
 def StringToBytes(text):
-    return list(ord(c) for c in text)
+    # 'hello world' > [104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]
+    return bytes(list(ord(c) for c in text))
 
 
 def BytesToString(binary):
+    # b'hello world' > hello world
     return "".join(chr(b) for b in binary)
 
 
 def BytesToInt(b):
+    # b'hello world' > 126207244316550804821666916
     return int.from_bytes(b, byteorder='big')
+
+def HexIntToChr(hexInt):
+    # 22 > '\"'
+    return bytes.fromhex(str(hexInt)).decode()
+
+def Unquote(s):
+    # Replaces urlencoded values like '%20' with ' '
+    ret = ''
+    skip = 0
+    for index, ch in enumerate(s):
+        if skip > 0:
+            skip -= 1
+            continue
+
+        if ch == '%' and \
+                index < len(s) + 2 and \
+                s[index + 1] != '%' and \
+                s[index - 1] != '%':
+                    h = s[index+1:index+3]
+                    print('h=', h)
+                    try:
+                        newCH = chr(int(h, 16))
+                        ret += newCH
+                        skip = 2
+                    except:
+                        ret += ch
+        else:
+            ret += ch
+    return ret.replace('%%', '%')
+
+
 
 
 # Processor port map ************************************************************

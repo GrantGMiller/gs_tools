@@ -1,10 +1,15 @@
-from gs_tools import TimeIt, WriteTimeItFile
-import time
+import json
 
-@TimeIt()
-def TestFunc(arg1, arg2, keyarg1=1, keyarg2=2):
-    time.sleep(1)
-    print('arg1={}, arg2={}, keyarg1={}, keyarg2={}'.format(arg1, arg2, keyarg1, keyarg2))
+def pprint(*args):
+    print('\r\n'.join([json.dumps(item, indent=2) for item in args]))
 
-TestFunc(3,4)
-WriteTimeItFile()
+
+d = {}
+for i in range(10):
+    d[i] = str(i)
+
+l = [i for i in range(10)]
+print('d=', d)
+print('l=', l)
+
+pprint(d, l, 'string', int(5), float(10))

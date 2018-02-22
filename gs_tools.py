@@ -20,6 +20,7 @@ import time
 import hashlib
 import calendar
 import random
+import json
 
 # Set this false to disable all print statements ********************************
 debug = True
@@ -509,3 +510,6 @@ def GetUTCOffset():
     offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
     MY_TIME_ZONE = offsetSeconds / 60 / 60 * -1
     return MY_TIME_ZONE  # returns an int like -5 for EST
+
+def pprint(*args):
+    print('\r\n'.join([json.dumps(item, indent=2) for item in args]))

@@ -504,3 +504,8 @@ class PrintFunc:
             oldPrint('{}(args={}, kwargs={}) return {}'.format(func.__name__, args, kwargs, ret))
             return ret
         return NewFunc
+
+def GetUTCOffset():
+    offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
+    MY_TIME_ZONE = offsetSeconds / 60 / 60 * -1
+    return MY_TIME_ZONE  # returns an int like -5 for EST

@@ -1,4 +1,4 @@
-from gs_tools import StringToBytes, BytesToString, BytesToInt, HexIntToChr, Unquote
+from gs_tools import StringToBytes, BytesToString, BytesToInt, HexIntToChr, Unquote, GetUTCOffset
 
 # b = StringToBytes('hello world')
 # print('b=', b)
@@ -12,4 +12,6 @@ from gs_tools import StringToBytes, BytesToString, BytesToInt, HexIntToChr, Unqu
 # c = HexIntToChr(22)
 # print('c=', c)
 
-print(Unquote('http%3A%2F%2Fwww.codebygrant.com%2FResume%2Findex.html'))
+# print(Unquote('http%3A%2F%2Fwww.codebygrant.com%2FResume%2Findex.html'))
+
+print(GetUTCOffset())

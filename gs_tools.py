@@ -512,4 +512,6 @@ def GetUTCOffset():
     return MY_TIME_ZONE  # returns an int like -5 for EST
 
 def pprint(*args):
+    # Realized that from pprint import pprint works in GS too :-)
+    # This one accepts multiple arguments, so u pick.
     print('\r\n'.join([json.dumps(item, indent=2) for item in args]))

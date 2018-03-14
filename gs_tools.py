@@ -21,6 +21,7 @@ import hashlib
 import calendar
 import random
 import json
+import itertools
 
 # Set this false to disable all print statements ********************************
 debug = True
@@ -515,3 +516,15 @@ def pprint(*args):
     # Realized that from pprint import pprint works in GS too :-)
     # This one accepts multiple arguments, so u pick.
     print('\r\n'.join([json.dumps(item, indent=2) for item in args]))
+
+def GetAllCombos(list1, list2):
+    # Returns all possible combinations of these two list
+    # Example GetAllCombos([1,2,3], [4,5,6])
+    # >>> [(1, 4), (1, 5), (1, 6), (2, 4), (2, 5), (2, 6), (3, 4), (3, 5), (3, 6)]
+    ret = []
+    for x in itertools.permutations(list1,len(list2)):
+        for y in zip(x, list2):
+            if y not in ret:
+                ret.append(y)
+    ret.sort()
+    return ret

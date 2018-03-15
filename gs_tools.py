@@ -444,12 +444,15 @@ def PrintTimeDiff(tag=None):
 timeItLog = {
     #'Func name': float(avgTime)
 }
+
+
 class TimeIt:
     def __call__(self, func):
         print('TimeIt.__call__ func={}'.format(func))
+
         def NewFunc(*args, **kwargs):
             startTime = time.time()
-            func(*args, **kwargs)
+            ret = func(*args, **kwargs)
             total = time.time() - startTime
             print('TimeIt: It took {} seconds to execute {}(args={}, kwargs={})'.format(
                 round(total, 2),
@@ -463,8 +466,10 @@ class TimeIt:
                 timeItLog[name] = total
             else:
                 lastTime = timeItLog[name]
-                avgTime = (lastTime + total)/2
+                avgTime = (lastTime + total) / 2
                 timeItLog[name] = avgTime
+
+            return ret
 
         return NewFunc
 

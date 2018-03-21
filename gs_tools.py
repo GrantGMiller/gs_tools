@@ -24,7 +24,7 @@ import json
 import itertools
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 oldPrint = print
 if not debug:
     # Disable print statements

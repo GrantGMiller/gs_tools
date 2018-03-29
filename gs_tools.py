@@ -261,16 +261,18 @@ class NonGlobal:
 
 
 # Hash function *****************************************************************
-def HashIt(string=''):
+def HashIt(string='', salt='gs_tools_arbitrary_string'):
     '''
     This function takes in a string and converts it to a unique hash.
     Note: this is a one-way conversion. The value cannot be converted from hash to the original string
     :param string:
     :return: str
     '''
-    arbitrary_string = 'gs_tools_arbitrary_string'
-    string += arbitrary_string
-    return hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
+    salt = 'gs_tools_arbitrary_string'
+    hash1 = hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
+    hash1 += salt
+    hash2 = hashlib.sha512(bytes(hash1, 'utf-8')).hexdigest()
+    return hash2
 
 
 def GetRandomPassword(length=512):

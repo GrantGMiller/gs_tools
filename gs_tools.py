@@ -22,6 +22,7 @@ import calendar
 import random
 import json
 import itertools
+import re
 
 # Set this false to disable all print statements ********************************
 debug = False
@@ -187,6 +188,11 @@ def IncrementIP(IP):
 
     return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
 
+def IsValidEmail(email):
+    if len(email) > 7:
+        if re.match(".+\@.+\..+", email) != None:
+            return True
+        return False
 
 def IsValidIPv4(ip):
     '''

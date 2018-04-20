@@ -6,6 +6,7 @@ Started: March 28, 2017 and appended to continuously
 from extronlib import event
 from extronlib.system import ProgramLog, File
 from extronlib.interface import EthernetServerInterfaceEx
+
 try:
     from extronlib_pro import Wait
 except:
@@ -188,11 +189,13 @@ def IncrementIP(IP):
 
     return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
 
+
 def IsValidEmail(email):
     if len(email) > 7:
         if re.match(".+\@.+\..+", email) != None:
             return True
         return False
+
 
 def IsValidIPv4(ip):
     '''
@@ -322,9 +325,11 @@ def BytesToInt(b):
     # b'hello world' > 126207244316550804821666916
     return int.from_bytes(b, byteorder='big')
 
+
 def HexIntToChr(hexInt):
     # 22 > '\"'
     return bytes.fromhex(str(hexInt)).decode()
+
 
 def Unquote(s):
     # Replaces urlencoded values like '%20' with ' '
@@ -339,19 +344,17 @@ def Unquote(s):
                 index < len(s) + 2 and \
                 s[index + 1] != '%' and \
                 s[index - 1] != '%':
-                    h = s[index+1:index+3]
-                    print('h=', h)
-                    try:
-                        newCH = chr(int(h, 16))
-                        ret += newCH
-                        skip = 2
-                    except:
-                        ret += ch
+            h = s[index + 1:index + 3]
+            print('h=', h)
+            try:
+                newCH = chr(int(h, 16))
+                ret += newCH
+                skip = 2
+            except:
+                ret += ch
         else:
             ret += ch
     return ret.replace('%%', '%')
-
-
 
 
 # Processor port map ************************************************************
@@ -437,8 +440,11 @@ def GetWeekOfMonth(dt):
         if dt.day in week:
             return index + 1
 
+
 global lastTime
 lastTime = time.time()
+
+
 def PrintTimeDiff(tag=None):
     global lastTime
     nowTime = time.time()
@@ -449,8 +455,9 @@ def PrintTimeDiff(tag=None):
         print('TimeDiff={}'.format(round(diff, 2)))
     lastTime = nowTime
 
+
 timeItLog = {
-    #'Func name': float(avgTime)
+    # 'Func name': float(avgTime)
 }
 
 
@@ -481,26 +488,29 @@ class TimeIt:
 
         return NewFunc
 
+
 def WriteTimeItFile():
     with File('TimeIt.log', mode='wt') as file:
         times = list(timeItLog.values())
         times.sort()
         times.reverse()
-        #print('times=', times)
-        sortedTimes = times #from slowest to fastest
+        # print('times=', times)
+        sortedTimes = times  # from slowest to fastest
 
         for t in sortedTimes:
             name = GetKeyFromValue(timeItLog, t)
-            #print('name=', name)
+            # print('name=', name)
             file.write('FunctionName="{}", ExecutionTime= {} seconds\n'.format(name, t))
 
+
 def Loop(t, func):
-    #Call the func every t seconds, forever
+    # Call the func every t seconds, forever
     @Wait(0)
     def Loop():
         while True:
             time.sleep(t)
             func()
+
 
 class PrintFunc:
     '''
@@ -512,33 +522,46 @@ class PrintFunc:
     def MyBtnEvent(button, state):
         pass
     '''
+
     def __call__(self, func):
-        #oldPrint('PrintFunc(func={})'.format(func))
+        # oldPrint('PrintFunc(func={})'.format(func))
         def NewFunc(*args, **kwargs):
             ret = func(*args, **kwargs)
             oldPrint('{}(args={}, kwargs={}) return {}'.format(func.__name__, args, kwargs, ret))
             return ret
+
         return NewFunc
+
 
 def GetUTCOffset():
     offsetSeconds = time.timezone if (time.localtime().tm_isdst == 0) else time.altzone
     MY_TIME_ZONE = offsetSeconds / 60 / 60 * -1
     return MY_TIME_ZONE  # returns an int like -5 for EST
 
+
 def pprint(*args):
     # Realized that from pprint import pprint works in GS too :-)
     # This one accepts multiple arguments, so u pick.
     print('\r\n'.join([json.dumps(item, indent=2) for item in args]))
+
 
 def GetAllCombos(list1, list2):
     # Returns all possible combinations of these two list
     # Example GetAllCombos([1,2,3], [4,5,6])
     # >>> [(1, 4), (1, 5), (1, 6), (2, 4), (2, 5), (2, 6), (3, 4), (3, 5), (3, 6)]
     ret = []
-    for x in itertools.permutations(list1,len(list2)):
+    for x in itertools.permutations(list1, len(list2)):
         for y in zip(x, list2):
             if y not in ret:
                 ret.append(y)
     ret.sort()
     return ret
 
+
+def GetOpposite(side):
+    return {
+        'Left': 'Right',
+        'Right': 'Left',
+        'Up': 'Down',
+        'Down': 'Up',
+    }[side]

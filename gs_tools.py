@@ -24,6 +24,7 @@ import random
 import json
 import itertools
 import re
+import operator
 
 # Set this false to disable all print statements ********************************
 debug = False
@@ -431,7 +432,9 @@ def ConvertDictToTupTup(d):
     if d is None:
         return (None, None)
     else:
-        return tuple(d.items())
+        # Sort the dict to make sure two dict with different orders, but same info return the same
+        sortedListOfTup = sorted(d.items(), key=operator.itemgetter(1))
+        return tuple(sortedListOfTup)
 
 
 def GetWeekOfMonth(dt):

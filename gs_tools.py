@@ -479,7 +479,7 @@ class TimeIt:
                 kwargs,
             ))
 
-            name = func.__name__
+            name = '{}.{}'.format(func.__module__, func.__name__)
             if name not in timeItLog:
                 timeItLog[name] = total
             else:
@@ -500,8 +500,14 @@ def WriteTimeItFile():
         # print('times=', times)
         sortedTimes = times  # from slowest to fastest
 
+        longestName = None
+        for name in timeItLog.keys():
+            if longestName is None or len(name) > len(longestName):
+                longestName = name
+
         for t in sortedTimes:
             name = GetKeyFromValue(timeItLog, t)
+            name = name.rjust(len(longestName), ' ')
             # print('name=', name)
             file.write('FunctionName="{}", ExecutionTime= {} seconds\n'.format(name, t))
 
@@ -568,3 +574,14 @@ def GetOpposite(side):
         'Up': 'Down',
         'Down': 'Up',
     }[side]
+
+
+class HashableDict(dict):
+    def __key(self):
+        return tuple((k, self[k]) for k in sorted(self))
+
+    def __hash__(self):
+        return hash(self.__key())
+
+    def __eq__(self, other):
+        return self.__key() == other.__key()

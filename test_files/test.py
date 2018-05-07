@@ -1,13 +1,6 @@
-import json
-def pprint(*args):
-    print('\r\n'.join([json.dumps(item, indent=2) for item in args]))
+from gs_tools import MoveListItem
 
+l = ['a', 'b', 'c', 'X', 'd', 'e', 'f','g']
+MoveListItem(l, 'X', 2)
 
-d = {}
-for i in range(3):
-    d[i] = str(i)
-
-l = [i for i in range(3)]
-
-
-pprint(d, l, 'string', int(5), float(10))
+print('l=', l)

@@ -585,3 +585,23 @@ class HashableDict(dict):
 
     def __eq__(self, other):
         return self.__key() == other.__key()
+
+def MoveListItem(l, item, units):
+    #units is an pos/neg integer (negative it to the left)
+    '''
+    Exampe;
+    l = ['a', 'b', 'c', 'X', 'd', 'e', 'f','g']
+    MoveListItem(l, 'X', -2)
+    >>> l= ['a', 'X', 'b', 'c', 'd', 'e', 'f', 'g']
+
+    l = ['a', 'b', 'c', 'X', 'd', 'e', 'f','g']
+    MoveListItem(l, 'X', -2)
+    >>> l= ['a', 'b', 'c', 'd', 'e', 'X', 'f', 'g']
+
+    '''
+    l = l.copy()
+    currentIndex = l.index(item)
+    l.remove(item)
+    l.insert(currentIndex + units, item)
+
+    return l

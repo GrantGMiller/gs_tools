@@ -605,3 +605,43 @@ def MoveListItem(l, item, units):
     l.insert(currentIndex + units, item)
 
     return l
+
+def ModIndexLoop(num, min_, max_):
+    '''
+    Examples:
+        ModIndexLoop(-10, -3, 3) >>> -3
+        ModIndexLoop(-9, -3, 3) >>> -2
+        ModIndexLoop(-8, -3, 3) >>> -1
+        ModIndexLoop(-7, -3, 3) >>> 0
+        ModIndexLoop(-6, -3, 3) >>> 1
+        ModIndexLoop(-5, -3, 3) >>> 2
+        ModIndexLoop(-4, -3, 3) >>> 3
+        ModIndexLoop(-3, -3, 3) >>> -3
+        ModIndexLoop(-2, -3, 3) >>> -2
+        ModIndexLoop(-1, -3, 3) >>> -1
+        ModIndexLoop(0, -3, 3) >>> 0
+        ModIndexLoop(1, -3, 3) >>> 1
+        ModIndexLoop(2, -3, 3) >>> 2
+        ModIndexLoop(3, -3, 3) >>> 3
+        ModIndexLoop(4, -3, 3) >>> -3
+        ModIndexLoop(5, -3, 3) >>> -2
+        ModIndexLoop(6, -3, 3) >>> -1
+        ModIndexLoop(7, -3, 3) >>> 0
+        ModIndexLoop(8, -3, 3) >>> 1
+        ModIndexLoop(9, -3, 3) >>> 2
+        ModIndexLoop(10, -3, 3) >>> 3
+    '''
+    #print('\nMod(num={}, min_={}, max_={})'.format(num, min_, max_))
+    maxMinDiff = max_ - min_ + 1 # +1 to include min_
+    #print('maxMinDiff=', maxMinDiff)
+
+    minToNum = num - min_
+    #print('minToNum=', minToNum)
+
+    if minToNum == 0:
+        return min_
+
+    mod = minToNum % maxMinDiff
+    #print('mod=', mod)
+
+    return min_ + mod

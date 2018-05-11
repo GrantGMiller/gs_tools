@@ -123,11 +123,15 @@ def RemoteTrace(IPPort=1024):
         ProgramLog('RemoteTraceServer {}'.format(result), 'info')
 
     def NewPrint(*args):  # override the print function to write to program log instead
-        string = '\r\n' + str(time.time()) + ': ' + ' '.join(str(arg) for arg in args)
+        try:
+            oldPrint(*args)
+            string = '\r\n' + str(time.time()) + ': ' + ' '.join(str(arg) for arg in args)
 
-        for client in RemoteTraceServer.Clients:
-            client.Send(string + '\r\n')
-            # ProgramLog(string, 'info')
+            for client in RemoteTraceServer.Clients:
+                client.Send(string + '\r\n')
+                # ProgramLog(string, 'info')
+        except Exception as e:
+            ProgramLog(str(e), 'error')
 
     return NewPrint
 

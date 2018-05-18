@@ -238,6 +238,20 @@ def GetKeyFromValue(d, v):
             return k
 
 
+def StripNonHex(string):
+    ret = ''
+    for c in string.upper():
+        if c in '0123456789ABCDEF':
+            ret += c
+    return ret
+
+
+def MACFormat(macString):
+    # macString can be any string like 'aabbccddeeff'
+    macString = StripNonHex(macString)
+    return '-'.join([macString[i: i+2] for i in range(0, len(macString), 2)])
+
+
 def PhoneFormat(n):
     '''
     This function formats a string like a phone number
@@ -590,8 +604,9 @@ class HashableDict(dict):
     def __eq__(self, other):
         return self.__key() == other.__key()
 
+
 def MoveListItem(l, item, units):
-    #units is an pos/neg integer (negative it to the left)
+    # units is an pos/neg integer (negative it to the left)
     '''
     Exampe;
     l = ['a', 'b', 'c', 'X', 'd', 'e', 'f','g']
@@ -609,6 +624,7 @@ def MoveListItem(l, item, units):
     l.insert(currentIndex + units, item)
 
     return l
+
 
 def ModIndexLoop(num, min_, max_):
     '''
@@ -635,17 +651,17 @@ def ModIndexLoop(num, min_, max_):
         ModIndexLoop(9, -3, 3) >>> 2
         ModIndexLoop(10, -3, 3) >>> 3
     '''
-    #print('\nMod(num={}, min_={}, max_={})'.format(num, min_, max_))
-    maxMinDiff = max_ - min_ + 1 # +1 to include min_
-    #print('maxMinDiff=', maxMinDiff)
+    # print('\nMod(num={}, min_={}, max_={})'.format(num, min_, max_))
+    maxMinDiff = max_ - min_ + 1  # +1 to include min_
+    # print('maxMinDiff=', maxMinDiff)
 
     minToNum = num - min_
-    #print('minToNum=', minToNum)
+    # print('minToNum=', minToNum)
 
     if minToNum == 0:
         return min_
 
     mod = minToNum % maxMinDiff
-    #print('mod=', mod)
+    # print('mod=', mod)
 
     return min_ + mod

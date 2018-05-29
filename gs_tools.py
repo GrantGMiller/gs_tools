@@ -249,7 +249,7 @@ def StripNonHex(string):
 def MACFormat(macString):
     # macString can be any string like 'aabbccddeeff'
     macString = StripNonHex(macString)
-    return '-'.join([macString[i: i+2] for i in range(0, len(macString), 2)])
+    return '-'.join([macString[i: i + 2] for i in range(0, len(macString), 2)])
 
 
 def PhoneFormat(n):
@@ -595,6 +595,13 @@ def GetOpposite(side):
 
 
 class HashableDict(dict):
+    def __new__(cls, item):
+        oldPrint('item=', item)
+        if item is None:
+            return None
+        else:
+            return super().__new__(cls, item)
+
     def __key(self):
         return tuple((k, self[k]) for k in sorted(self))
 
@@ -603,6 +610,20 @@ class HashableDict(dict):
 
     def __eq__(self, other):
         return self.__key() == other.__key()
+
+    # def __setitem__(self, key, value):
+    #     oldPrint('setitem', key, value)
+
+    def __contains__(self, other):
+        # return true if the self key/value pairs in exists in other
+        for key, value in other.items():
+            try:
+                self[key]
+                continue
+            except:
+                return False
+
+        return True
 
 
 def MoveListItem(l, item, units):
@@ -665,3 +686,11 @@ def ModIndexLoop(num, min_, max_):
     # print('mod=', mod)
 
     return min_ + mod
+
+
+def DecodeLiteral(string):
+    return string.decode(encoding='iso-8859-1')
+
+
+def EncodeLiteral(string):
+    return string.encode(encoding='iso-8859-1')

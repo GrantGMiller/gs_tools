@@ -596,7 +596,7 @@ def GetOpposite(side):
 
 class HashableDict(dict):
     def __new__(cls, item):
-        oldPrint('item=', item)
+        #oldPrint('item=', item)
         if item is None:
             return None
         else:

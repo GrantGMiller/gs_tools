@@ -625,6 +625,14 @@ class HashableDict(dict):
 
         return True
 
+    def __add__(self, other):
+        # Other will take precedence if duplicate keys in self/other
+        retD = self.copy()
+        for key, value in other.items():
+            retD[key] = value
+
+        return retD
+
 
 def MoveListItem(l, item, units):
     # units is an pos/neg integer (negative it to the left)

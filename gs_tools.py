@@ -618,8 +618,10 @@ class HashableDict(dict):
         # return true if the self key/value pairs in exists in other
         for key, value in other.items():
             try:
-                self[key]
-                continue
+                if self[key] != other[key]:
+                    return False
+                else:
+                    continue
             except:
                 return False
 
@@ -631,7 +633,7 @@ class HashableDict(dict):
         for key, value in other.items():
             retD[key] = value
 
-        return retD
+        return HashableDict(retD)
 
 
 def MoveListItem(l, item, units):

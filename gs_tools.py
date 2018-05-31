@@ -27,7 +27,7 @@ import re
 import operator
 
 # Set this false to disable all print statements ********************************
-debug = True
+debug = False
 oldPrint = print
 if not debug:
     # Disable print statements
@@ -445,14 +445,7 @@ PROCESSOR_CAPABILITIES['60-1417-01'] = {  # IPCP Pro 350
 
 
 def ConvertDictToTupTup(d):
-    # Converts a dict to a tuple of tuples.
-    # This is hashable and can be used as a dict key unlike a regular dict()
-    if d is None:
-        return (None, None)
-    else:
-        # Sort the dict to make sure two dict with different orders, but same info return the same
-        sortedListOfTup = sorted(d.items(), key=operator.itemgetter(1))
-        return tuple(sortedListOfTup)
+    return HashableDict(d)
 
 
 def GetWeekOfMonth(dt):

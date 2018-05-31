@@ -27,7 +27,7 @@ import re
 import operator
 
 # Set this false to disable all print statements ********************************
-debug = False
+debug = True
 oldPrint = print
 if not debug:
     # Disable print statements
@@ -596,7 +596,7 @@ def GetOpposite(side):
 
 class HashableDict(dict):
     def __new__(cls, item):
-        #oldPrint('item=', item)
+        # oldPrint('item=', item)
         if item is None:
             return None
         else:
@@ -704,3 +704,17 @@ def DecodeLiteral(string):
 
 def EncodeLiteral(string):
     return string.encode(encoding='iso-8859-1')
+
+
+class Dummy:
+    def __setattr__(self, *a, **k):
+        print('Dummy __setattr__', a, k)
+
+    def __getattr__(self, *a, **k):
+        print('Dummy __setattr__', a, k)
+        return self._fakeMethod
+
+    def _fakeMethod(self, *a, **k):
+        print('Dummy _fakeMethod', a, k)
+
+

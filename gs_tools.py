@@ -445,7 +445,11 @@ PROCESSOR_CAPABILITIES['60-1417-01'] = {  # IPCP Pro 350
 
 
 def ConvertDictToTupTup(d):
-    return HashableDict(d)
+    print('448 ConvertDictToTupTup', d)
+    if d is None:
+        return None
+    else:
+        return HashableDict(d)
 
 
 def GetWeekOfMonth(dt):
@@ -711,3 +715,5 @@ class Dummy:
         print('Dummy _fakeMethod', a, k)
 
 
+def ListHasDuplicates(l):
+    return len(l) != len(set(l))

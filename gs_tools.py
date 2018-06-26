@@ -717,3 +717,98 @@ class Dummy:
 
 def ListHasDuplicates(l):
     return len(l) != len(set(l))
+
+
+def _TupleSubtract(tup1, tup2):
+    # assumes tups are same length
+    # example:
+    # newDT = (2018, 6, 22, 4, 17, 1, 43, 0)
+    # oldDT = (2018, 6, 22, 4, 16, 33, 7, 829)
+    # diff = _TupleSubtract(newDT, oldDT)
+    # diff = (0, 0, 0, 0, 1, -32, 36, -829)
+    ret = []
+    for i in range(len(tup1)):
+        ret.append(tup1[i] - tup2[i])
+    return tuple(ret)
+
+
+def _TupleAdd(tup1, tup2):
+    ret = []
+    for i in range(len(tup1)):
+        ret.append(tup1[i] + tup2[i])
+    return tuple(ret)
+
+
+def _AdjustTimeTuple(tup):
+    # example                          #7
+    # tup = (0, 0, 0, 0, 1, -32, 36, -829)
+    # return (0, 0, 0, 0, 0, 8, 35, 171)
+    ret = list(tup)
+
+    while ret[7] < 0:  # milis
+        ret[6] -= 1
+        ret[7] += 1000
+
+    while ret[6] < 0:  # seconds
+        ret[5] -= 1
+        ret[6] += 60
+
+    while ret[5] < 0:  # min
+        ret[4] -= 1
+        ret[5] += 60
+
+    while ret[4] < 0:  # hour
+        ret[2] -= 1
+        ret[4] += 24
+
+    while ret[2] < 0:  # days
+        oldMonth = ret[1]
+        ret[1] -= 1
+        ret[2] += _DaysInMonth(oldMonth, ret[0])
+
+    while ret[1] < 0:  # month
+        ret[0] -= 1
+        ret[1] += 12
+
+    # ill assume year is > 0
+    return tuple(ret)
+
+
+def _DaysInMonth(month, year):
+    return 30 if month in (9, 4, 6, 11) else 31 if month != 2 else 29 if year % 4 is 0 else 28
+
+
+def _Datetime2seconds(tup):
+    # months with 30 days = [9,4,6,11]
+    # months with 31 days = [1,3,5,7,8,10,12]
+    # feb /leap year
+    daysInMonth = _DaysInMonth(tup[1], tup[0])
+    seconds = 0
+    seconds += tup[0] * 60 * 60 * 24 * 365  # years
+    seconds += tup[1] * 60 * 60 * 24 * daysInMonth  # months
+    seconds += tup[2] * 60 * 60 * 24  # days
+    seconds += tup[4] * 60 * 60  # hours
+    seconds += tup[5] * 60  # minutes
+    seconds += tup[6]
+    seconds += tup[7] / 1000
+    return seconds
+
+
+def _CalcDrift():
+    # returns drift as float() in seconds/second
+    # example drift = 1 means every real 1 second = 1 seconds in RTC (Ideal)
+    # drift = 1.0833 means 1 real second = 1.0833 RTC seconds (real world measurement)
+
+    lastNTPDT = PV().Get('LastNTPdatetime', mach.RTC().datetime())
+    print()
+    last2OldDT = _TupleSubtract(mach.RTC().datetime(), lastNTPDT)
+    ntp.settime()
+    last2NewDT = _TupleSubtract(mach.RTC().datetime(), lastNTPDT)
+    driftTup = _TupleSubtract(last2NewDT, last2OldDT)
+    driftSeconds = _Datetime2seconds(driftTup)
+    totalSeconds = _Datetime2seconds(last2NewDT)
+    if driftSeconds == 0:
+        driftPerSecond = 0
+    else:
+        driftPerSecond = totalSeconds / driftSeconds
+    return driftPerSecond

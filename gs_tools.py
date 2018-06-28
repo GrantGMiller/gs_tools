@@ -410,15 +410,24 @@ PROCESSOR_CAPABILITIES['60-1413-01'] = {  # IPL Pro S3
     'Power Ports': 0,
     'eBus': False,
 }
-PROCESSOR_CAPABILITIES['60-1416-01'] = {  # IPL Pro CR88
-    'Serial Ports': 0,
+PROCESSOR_CAPABILITIES['60-1413-01'] = {  # IPL Pro S3
+    'Serial Ports': 3,
     'IR/S Ports': 0,
     'Digital I/Os': 0,
     'FLEX I/Os': 0,
-    'Relays': 8,
+    'Relays': 0,
     'Power Ports': 0,
     'eBus': False,
-    'Contact': 8,
+}
+PROCESSOR_CAPABILITIES['60-1414-01'] = {  # IPL Pro CR88
+    'Serial Ports': 6,
+    'IR/S Ports': 0,
+    'Digital I/Os': 0,
+    'FLEX I/Os': 0,
+    'Relays': 0,
+    'Power Ports': 0,
+    'eBus': False,
+    'Contact': 0,
 }
 
 PROCESSOR_CAPABILITIES['60-1429-01'] = {  # IPCP Pro 250

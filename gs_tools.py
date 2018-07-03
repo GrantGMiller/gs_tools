@@ -728,6 +728,11 @@ def ListHasDuplicates(l):
     return len(l) != len(set(l))
 
 
+def ListIsAllSame(l):
+    # each element of the list is the same
+    return len(set(l)) == 1
+
+
 def _TupleSubtract(tup1, tup2):
     # assumes tups are same length
     # example:

@@ -601,7 +601,7 @@ def GetOpposite(side):
 
 
 class HashableDict(dict):
-    def __new__(cls, item):
+    def __new__(cls, item={}):
         # oldPrint('item=', item)
         if item is None:
             return None
@@ -622,16 +622,19 @@ class HashableDict(dict):
 
     def __contains__(self, other):
         # return true if the self key/value pairs in exists in other
-        for key, value in other.items():
-            try:
-                if self[key] != other[key]:
+        if isinstance(other, str):
+            return other in self.keys()
+        else:
+            for key, value in other.items():
+                try:
+                    if self[key] != other[key]:
+                        return False
+                    else:
+                        continue
+                except:
                     return False
-                else:
-                    continue
-            except:
-                return False
 
-        return True
+            return True
 
     def __add__(self, other):
         # Other will take precedence if duplicate keys in self/other

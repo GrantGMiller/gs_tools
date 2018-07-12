@@ -615,7 +615,10 @@ class HashableDict(dict):
         return hash(self.__key())
 
     def __eq__(self, other):
-        return self.__key() == other.__key()
+        if isinstance(other, HashableDict):
+            return self.__key() == other.__key()
+        else:
+            return False
 
     # def __setitem__(self, key, value):
     #     oldPrint('setitem', key, value)

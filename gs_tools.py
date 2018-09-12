@@ -255,6 +255,11 @@ def MACFormat(macString):
     return '-'.join([macString[i: i + 2] for i in range(0, len(macString), 2)])
 
 
+def GetMac():
+    from uuid import getnode as get_mac
+    mac = get_mac()
+
+
 def PhoneFormat(n):
     '''
     This function formats a string like a phone number
@@ -296,9 +301,16 @@ def HashIt(string='', salt='gs_tools_arbitrary_string'):
     '''
     This function takes in a string and converts it to a unique hash.
     Note: this is a one-way conversion. The value cannot be converted from hash to the original string
-    :param string:
+    :param string: string, if None a random hash will be returned
     :return: str
     '''
+    if string is None:
+        # if None a random hash will be returned
+        string = str(time.time())
+
+    if not isinstance(string, str):
+        string = str(string)
+
     salt = 'gs_tools_arbitrary_string'
     hash1 = hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
     hash1 += salt

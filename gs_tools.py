@@ -3,9 +3,12 @@ This module is meant to be a collection of tools to simplify common task in AV c
 Started: March 28, 2017 and appended to continuously
 '''
 
-from extronlib import event
-from extronlib.system import ProgramLog, File
-from extronlib.interface import EthernetServerInterfaceEx
+try:
+    from extronlib import event
+    from extronlib.system import ProgramLog, File
+    from extronlib.interface import EthernetServerInterfaceEx
+except Exception as e:
+    print(e)
 
 try:
     from extronlib_pro import Wait

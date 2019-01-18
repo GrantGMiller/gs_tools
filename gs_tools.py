@@ -27,7 +27,8 @@ import random
 import json
 import itertools
 import re
-import operator
+
+import uuid
 
 # Set this false to disable all print statements ********************************
 debug = False
@@ -251,13 +252,18 @@ def StripNonHex(string):
 
 def MACFormat(macString):
     # macString can be any string like 'aabbccddeeff'
+
     macString = StripNonHex(macString)
+    while len(macString) < 12:
+        macString = '0' + macString
+
     return '-'.join([macString[i: i + 2] for i in range(0, len(macString), 2)])
 
 
 def GetMac():
     from uuid import getnode as get_mac
-    mac = get_mac()
+    mac = hex(get_mac())
+    return MACFormat(mac)
 
 
 def PhoneFormat(n):
@@ -296,14 +302,24 @@ class NonGlobal:
         return getattr(self, name_of_value_str)
 
 
-# Hash function *****************************************************************
-def HashIt(string='', salt='gs_tools_arbitrary_string'):
+def GetUniqueMachineID():
+    return HashIt(GetMac())
+
+
+def GetRandomHash():
+    return HashIt(GetRandomPassword())
+
+
+def HashIt(string='', salt=None):
     '''
     This function takes in a string and converts it to a unique hash.
     Note: this is a one-way conversion. The value cannot be converted from hash to the original string
     :param string: string, if None a random hash will be returned
     :return: str
     '''
+    if salt is None:
+        salt = str(uuid.uuid1()) + str(uuid.uuid4())
+
     if string is None:
         # if None a random hash will be returned
         string = GetRandomPassword()

@@ -27,13 +27,14 @@ import random
 import json
 import itertools
 import re
-
+import datetime
 import uuid
 
 # Set this false to disable all print statements ********************************
 debug = False
+
 oldPrint = print
-if not debug:
+if debug is False:
     # Disable print statements
     print = lambda *args, **kwargs: None
 
@@ -863,3 +864,49 @@ def _CalcDrift():
     else:
         driftPerSecond = totalSeconds / driftSeconds
     return driftPerSecond
+
+
+def FormatTimeAgo(dt):
+    print('58 FormatTimeAgo(', dt)
+    utcNowDt = datetime.datetime.now()
+    delta = utcNowDt - dt
+    print('61 delta=', delta)
+
+    if delta < datetime.timedelta(days=1):
+        print('less than 1 day ago')
+        if delta < datetime.timedelta(hours=1):
+            print('less than 1 hour ago, show "X minutes ago"')
+            if delta.total_seconds() < 60:
+                # print('return <1 min ago')
+                ret = '< 1 min ago'
+                print('70 ret=', ret)
+                return ret
+            else:
+                minsAgo = delta.total_seconds() / 60
+                minsAgo = int(minsAgo)
+                ret = '{} min{} ago'.format(
+                    minsAgo,
+                    's' if minsAgo > 1 else '',
+                )
+                print('77 ret=', ret)
+                return ret
+        else:
+            # between 1hour and 24 hours ago
+            hoursAgo = delta.total_seconds() / (60 * 60)
+            hoursAgo = int(hoursAgo)
+            ret = '{} hour{} ago'.format(
+                hoursAgo,
+                's' if hoursAgo > 1 else '',
+            )
+            print('89 ret=', ret)
+            return ret
+    else:
+        print('more than 1 day ago')
+        daysAgo = delta.total_seconds() / (60 * 60 * 24 * 1)
+        daysAgo = int(daysAgo)
+        ret = '{} day{} ago'.format(
+            daysAgo,
+            's' if daysAgo > 1 else '',
+        )
+        print('99 ret=', ret)
+        return ret

@@ -382,6 +382,19 @@ def HexIntToChr(hexInt):
     return bytes.fromhex(str(hexInt)).decode()
 
 
+def MacStringToHex(macString):
+    '''
+
+    :param macString: str like '11-22-33-44-55-66' return from MACFormat()
+    :return: bytes like b'\x11\x22\x33\x44\x55\x66'
+    '''
+    macString = MACFormat(macString)  # just to be sure
+    m = [octet for octet in macString.split('-')]
+    ret = [bytes.fromhex(item) for item in m]
+    ret = b''.join(ret)
+    return ret
+
+
 def Unquote(s):
     # Replaces urlencoded values like '%20' with ' '
     ret = ''

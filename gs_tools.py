@@ -29,6 +29,7 @@ import itertools
 import re
 import datetime
 import uuid
+import binascii
 
 # Set this false to disable all print statements ********************************
 debug = False
@@ -382,7 +383,7 @@ def HexIntToChr(hexInt):
     return bytes.fromhex(str(hexInt)).decode()
 
 
-def MacStringToHex(macString):
+def MacStringToMacBytes(macString):
     '''
 
     :param macString: str like '11-22-33-44-55-66' return from MACFormat()
@@ -393,6 +394,12 @@ def MacStringToHex(macString):
     ret = [bytes.fromhex(item) for item in m]
     ret = b''.join(ret)
     return ret
+
+
+def MacBytesToMacString(macBytes):
+    macBytesHex = binascii.hexlify(macBytes)
+    macString = macBytesHex.decode()
+    return MACFormat(macString)
 
 
 def Unquote(s):

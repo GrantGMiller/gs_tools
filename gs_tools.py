@@ -624,6 +624,31 @@ def GetUTCOffset():
     return MY_TIME_ZONE  # returns an int like -5 for EST
 
 
+def GetTimeZoneName():
+    TZ_NAME = time.tzname[0]
+    return TZ_NAME
+
+
+def WhatTimeInZone(zone, dt=None):
+    '''
+
+    :param zone: str like 'EST', 'PST', 'CST'
+    :return: datetime
+    '''
+    map = {
+        'EST': -5,
+        'CST': -6,
+        'PST': -8,
+    }
+    if dt is None:
+        dt = datetime.datetime.utcnow()
+
+    if time.localtime().tm_isdst:
+        dt += datetime.timedelta(hours=1)
+
+    return dt + datetime.timedelta(hours=map[zone])
+
+
 def pprint(*args):
     # Realized that from pprint import pprint works in GS too :-)
     # This one accepts multiple arguments, so u pick.

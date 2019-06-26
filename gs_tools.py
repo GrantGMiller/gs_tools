@@ -363,6 +363,18 @@ def GetDatetimeKwargs(dt):
     return d
 
 
+def GetDatetimeFromKwargs(**kwargs):
+    return datetime.datetime(
+        year=kwargs.get('year'),
+        month=kwargs.get('month'),
+        day=kwargs.get('day'),
+        hour=kwargs.get('hour'),
+        minute=kwargs.get('minute'),
+        second=kwargs.get('second'),
+        microsecond=kwargs.get('microsecond'),
+    )
+
+
 def StringToBytes(text):
     # 'hello world' > [104, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100]
     return bytes(list(ord(c) for c in text))

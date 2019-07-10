@@ -345,7 +345,7 @@ def GetRandomPassword(length=512):
     return pw
 
 
-def GetDatetimeKwargs(dt):
+def GetDatetimeKwargs(dt, utcOffsetHours=None):
     '''
     This converts a datetime.datetime object to a dict.
     This is useful for saving a datetime.datetime object as a json string
@@ -360,6 +360,9 @@ def GetDatetimeKwargs(dt):
          'second': dt.second,
          'microsecond': dt.microsecond,
          }
+    if utcOffsetHours:
+        d['utc_offset_hours'] = utcOffsetHours
+
     return d
 
 

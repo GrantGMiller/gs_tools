@@ -308,8 +308,13 @@ def GetUniqueMachineID():
     return HashIt(GetMac())
 
 
-def GetRandomHash():
-    return HashIt(GetRandomPassword())
+def GetRandomHash(length=None):
+    pw = GetRandomPassword()
+    hash = HashIt(pw)
+    if length is None:
+        length = len(hash)
+
+    return hash[:length]
 
 
 def HashIt(string='', salt=None):

@@ -324,8 +324,6 @@ def HashIt(string='', salt=None):
     :param string: string, if None a random hash will be returned
     :return: str
     '''
-    if salt is None:
-        salt = str(uuid.uuid1()) + str(uuid.uuid4())
 
     if string is None:
         # if None a random hash will be returned

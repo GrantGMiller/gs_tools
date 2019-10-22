@@ -813,16 +813,23 @@ def EncodeLiteral(string):
     return string.encode(encoding='iso-8859-1')
 
 
-class Dummy:
+class _Dummy:
+    def __init__(self, *a, **k):
+        print('_Dummy.__init__', a, k)
+
     def __setattr__(self, *a, **k):
         print('Dummy __setattr__', a, k)
 
     def __getattr__(self, *a, **k):
-        print('Dummy __setattr__', a, k)
-        return self._fakeMethod
+        print('Dummy __getattr__', a, k)
+        return _Dummy()
 
-    def _fakeMethod(self, *a, **k):
-        print('Dummy _fakeMethod', a, k)
+    def __iter__(self, *a, **k):
+        print('Dummy __iter__', a, k)
+        yield None, None
+
+    def __call__(self, *a, **k):
+        print('_Dummy.__call__', a, k)
 
 
 def ListHasDuplicates(l):
@@ -909,26 +916,6 @@ def _Datetime2seconds(tup):
     return seconds
 
 
-def _CalcDrift():
-    # returns drift as float() in seconds/second
-    # example drift = 1 means every real 1 second = 1 seconds in RTC (Ideal)
-    # drift = 1.0833 means 1 real second = 1.0833 RTC seconds (real world measurement)
-
-    lastNTPDT = PV().Get('LastNTPdatetime', mach.RTC().datetime())
-    print()
-    last2OldDT = _TupleSubtract(mach.RTC().datetime(), lastNTPDT)
-    ntp.settime()
-    last2NewDT = _TupleSubtract(mach.RTC().datetime(), lastNTPDT)
-    driftTup = _TupleSubtract(last2NewDT, last2OldDT)
-    driftSeconds = _Datetime2seconds(driftTup)
-    totalSeconds = _Datetime2seconds(last2NewDT)
-    if driftSeconds == 0:
-        driftPerSecond = 0
-    else:
-        driftPerSecond = totalSeconds / driftSeconds
-    return driftPerSecond
-
-
 def FormatTimeAgo(dt):
     print('58 FormatTimeAgo(', dt)
     utcNowDt = datetime.datetime.now()
@@ -973,3 +960,12 @@ def FormatTimeAgo(dt):
         )
         print('99 ret=', ret)
         return ret
+
+
+def IsWeekend(dt=None):
+    dt = dt or datetime.datetime.now()
+
+    if dt.isoweekday() in (6, 7):
+        return True
+    else:
+        return False

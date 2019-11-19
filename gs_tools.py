@@ -8,7 +8,7 @@ try:
     from extronlib.system import ProgramLog, File
     from extronlib.interface import EthernetServerInterfaceEx
 except Exception as e:
-    print(e)
+    print('gs_tools Exception 11:', e)
 
 try:
     from extronlib_pro import Wait

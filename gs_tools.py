@@ -3,12 +3,17 @@ This module is meant to be a collection of tools to simplify common task in AV c
 Started: March 28, 2017 and appended to continuously
 '''
 
-try:
-    from extronlib import event
-    from extronlib.system import ProgramLog, File
-    from extronlib.interface import EthernetServerInterfaceEx
-except Exception as e:
-    print('gs_tools Exception 11:', e)
+from extronlib.system import ProgramLog, File
+from extronlib.interface import EthernetServerInterfaceEx
+from extronlib import event
+# dont do try/except to import extronlib
+# for some reason it was giving me trouble with extronlib_clone, but commenting it out seems to fix it
+# try:
+#     from extronlib.system import ProgramLog, File
+#     from extronlib.interface import EthernetServerInterfaceEx
+#     from extronlib import event
+# except Exception as e:
+#     print('gs_tools Exception 11:', e)
 
 try:
     from extronlib_pro import Wait

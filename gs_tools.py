@@ -6,6 +6,7 @@ Started: March 28, 2017 and appended to continuously
 from extronlib.system import ProgramLog, File
 from extronlib.interface import EthernetServerInterfaceEx
 from extronlib import event
+
 # dont do try/except to import extronlib
 # for some reason it was giving me trouble with extronlib_clone, but commenting it out seems to fix it
 # try:
@@ -204,6 +205,25 @@ def IncrementIP(IP):
                     Oct1 = 0
 
     return '{}.{}.{}.{}'.format(Oct1, Oct2, Oct3, Oct4)
+
+
+def IsValidMACAddress(mac):
+    if not isinstance(mac, str):
+        return False
+
+    return bool(re.match("[0-9a-f]{2}([-:]?)[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", mac.lower()))
+
+
+def IsValidHostname(hostname):
+    if not isinstance(hostname, str):
+        return False
+
+    if len(hostname) > 255:
+        return False
+    if hostname[-1] == ".":
+        hostname = hostname[:-1]  # strip exactly one dot from the right, if present
+    allowed = re.compile("(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
+    return all(allowed.match(x) for x in hostname.split("."))
 
 
 def IsValidEmail(email):

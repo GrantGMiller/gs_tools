@@ -3,9 +3,13 @@ This module is meant to be a collection of tools to simplify common task in AV c
 Started: March 28, 2017 and appended to continuously
 '''
 
-from extronlib.system import ProgramLog, File
-from extronlib.interface import EthernetServerInterfaceEx
-from extronlib import event
+try:
+    from extronlib.system import ProgramLog, File
+    from extronlib.interface import EthernetServerInterfaceEx
+    from extronlib import event
+except:
+    pass
+import uuid
 
 # dont do try/except to import extronlib
 # for some reason it was giving me trouble with extronlib_clone, but commenting it out seems to fix it
@@ -19,7 +23,10 @@ from extronlib import event
 try:
     from extronlib_pro import Wait
 except:
-    from extronlib.system import Wait
+    try:
+        from extronlib.system import Wait
+    except:
+        pass
 
 try:
     import aes_tools
@@ -330,7 +337,7 @@ class NonGlobal:
 
 
 def GetUniqueMachineID():
-    return HashIt(GetMac())
+    return uuid.getnode()
 
 
 def GetRandomHash(length=None):
@@ -342,22 +349,20 @@ def GetRandomHash(length=None):
     return hash[:length]
 
 
-def HashIt(string='', salt=None):
+def HashIt(string=None, salt=str(uuid.getnode())):
     '''
     This function takes in a string and converts it to a unique hash.
     Note: this is a one-way conversion. The value cannot be converted from hash to the original string
     :param string: string, if None a random hash will be returned
     :return: str
     '''
-
     if string is None:
         # if None a random hash will be returned
-        string = GetRandomPassword()
+        string = str(random.random())
 
     if not isinstance(string, str):
         string = str(string)
 
-    salt = 'gs_tools_arbitrary_string'
     hash1 = hashlib.sha512(bytes(string, 'utf-8')).hexdigest()
     hash1 += salt
     hash2 = hashlib.sha512(bytes(hash1, 'utf-8')).hexdigest()
@@ -744,20 +749,7 @@ class HashableDict(dict):
     #     oldPrint('setitem', key, value)
 
     def __contains__(self, other):
-        # return true if the self key/value pairs in exists in other
-        if isinstance(other, str):
-            return other in self.keys()
-        else:
-            for key, value in other.items():
-                try:
-                    if self[key] != other[key]:
-                        return False
-                    else:
-                        continue
-                except:
-                    return False
-
-            return True
+        return other.items() <= self.items()
 
     def __add__(self, other):
         # Other will take precedence if duplicate keys in self/other
@@ -994,3 +986,30 @@ def IsWeekend(dt=None):
         return True
     else:
         return False
+
+
+if __name__ == '__main__':
+    print = oldPrint
+    d1 = HashableDict()
+    d2 = HashableDict()
+    for i in range(10):
+        d1[i] = str(i)
+        if i <= 5:
+            d2[i] = str(i)
+    print('d1=', d1)
+    print('d2=', d2)
+    print('d1 in d2=', d1 in d2)
+    print('d2 in d1=', d2 in d1)
+
+    assert d1 not in d2
+    assert d2 in d1
+
+    d1.clear()
+    d2.clear()
+
+    for i in range(10):
+        d1[i] = 'a'
+        d2[i] = 'b'
+
+    assert d1 not in d2
+    assert d2 not in d1

@@ -43,6 +43,7 @@ import re
 import datetime
 import uuid
 import binascii
+from collections import defaultdict
 
 # Set this false to disable all print statements ********************************
 debug = False

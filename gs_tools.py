@@ -1014,3 +1014,36 @@ if __name__ == '__main__':
 
     assert d1 not in d2
     assert d2 not in d1
+
+DANGEROUS_CHARACTERS = {
+    '#',
+    '%',
+    '&',
+    '{',
+    '}',
+    '\\',
+    '<',
+    '>',
+    '*',
+    '?',
+    '/',
+    ' ',
+    '$',
+    '!',
+    '\'',
+    '\"',
+    ':',
+    '@',
+    '+',
+    '`',
+    '|',
+    '=',
+    '.',
+}
+
+
+def secure_filename(name):
+    for ch in DANGEROUS_CHARACTERS:
+        if ch in name:
+            name = name.replace(ch, '_')
+    return name

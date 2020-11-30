@@ -1047,3 +1047,28 @@ def secure_filename(name):
         if ch in name:
             name = name.replace(ch, '_')
     return name
+
+
+def sorted_nicely(iterableObj):
+    """ Sorts the given iterable list alphabetical including numberical values
+
+    The default list.sort() will sort thing like this:
+    Room 1
+    Room 10
+    Room 2
+    Room 20
+
+    This function will sort it like this:
+    Room 1
+    Room 2
+    Room 10
+    Room 20
+
+    Required arguments:
+    iterableObj -- The iterable to be sorted.
+
+
+    """
+    convert = lambda text: int(text) if text.isdigit() else text
+    alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+    return sorted(iterableObj, key=alphanum_key)

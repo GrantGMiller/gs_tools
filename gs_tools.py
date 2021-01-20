@@ -934,49 +934,49 @@ def _Datetime2seconds(tup):
     return seconds
 
 
-def FormatTimeAgo(dt):
+def FormatTimeAgo(dt, suffix='ago'):
     print('58 FormatTimeAgo(', dt)
     utcNowDt = datetime.datetime.now()
     delta = utcNowDt - dt
-    print('61 delta=', delta)
+    s = FriendlyTime(delta, suffix)
+    return s
+
+
+def FriendlyTime(timedelta, suffix=''):
+    delta = timedelta
 
     if delta < datetime.timedelta(days=1):
-        print('less than 1 day ago')
         if delta < datetime.timedelta(hours=1):
-            print('less than 1 hour ago, show "X minutes ago"')
             if delta.total_seconds() < 60:
-                # print('return <1 min ago')
-                ret = '< 1 min ago'
-                print('70 ret=', ret)
+                ret = '< 1 min {}'.format(suffix)
                 return ret
             else:
-                minsAgo = delta.total_seconds() / 60
-                minsAgo = int(minsAgo)
-                ret = '{} min{} ago'.format(
-                    minsAgo,
-                    's' if minsAgo > 1 else '',
+                mins = delta.total_seconds() / 60
+                mins = int(mins)
+                ret = '{} min{} {}'.format(
+                    mins,
+                    's' if mins > 1 else '',
+                    suffix
                 )
-                print('77 ret=', ret)
                 return ret
         else:
-            # between 1hour and 24 hours ago
-            hoursAgo = delta.total_seconds() / (60 * 60)
-            hoursAgo = int(hoursAgo)
-            ret = '{} hour{} ago'.format(
-                hoursAgo,
-                's' if hoursAgo > 1 else '',
+            # between 1hour and 24 hours
+            hours = delta.total_seconds() / (60 * 60)
+            hours = int(hours)
+            ret = '{} hour{} {}'.format(
+                hours,
+                's' if hours > 1 else '',
+                suffix,
             )
-            print('89 ret=', ret)
             return ret
     else:
-        print('more than 1 day ago')
-        daysAgo = delta.total_seconds() / (60 * 60 * 24 * 1)
-        daysAgo = int(daysAgo)
-        ret = '{} day{} ago'.format(
-            daysAgo,
-            's' if daysAgo > 1 else '',
+        days = delta.total_seconds() / (60 * 60 * 24 * 1)
+        days = int(days)
+        ret = '{} day{} {}'.format(
+            days,
+            's' if days > 1 else '',
+            suffix
         )
-        print('99 ret=', ret)
         return ret
 
 

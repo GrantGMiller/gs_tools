@@ -678,6 +678,12 @@ def GetTimeZoneName():
     return TZ_NAME
 
 
+def GetNowDatetimeWithLocalTimezone():
+    return datetime.datetime.now().astimezone(
+        # passing nothing assumes local timezone
+    )
+
+
 def WhatTimeInZone(zone, dt=None):
     '''
 

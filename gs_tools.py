@@ -921,7 +921,7 @@ def _AdjustTimeTuple(tup):
 
 
 def _DaysInMonth(month, year):
-    return 30 if month in (9, 4, 6, 11) else 31 if month != 2 else 29 if year % 4 is 0 else 28
+    return 30 if month in (9, 4, 6, 11) else 31 if month != 2 else 29 if year % 4 == 0 else 28
 
 
 def _Datetime2seconds(tup):
@@ -1078,3 +1078,7 @@ def sorted_nicely(iterableObj):
     convert = lambda text: int(text) if text.isdigit() else text
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
     return sorted(iterableObj, key=alphanum_key)
+
+
+def DictContains(superDict, subdict):
+    return subdict.items() <= superDict.items()
